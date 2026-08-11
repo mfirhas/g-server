@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/mfirhas/g-server"
 documentation = "https://docs.rs/g-server"
 keywords = ["http", "sse", "websocket", "mcp", "server"]
-categories = ["http"]
+categories = ["rust-patterns"]
 rust-version = "1.86.0"
 exclude = [
   "**/*_test.rs",
