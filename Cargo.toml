@@ -1,14 +1,14 @@
 [package]
-name = "rust-template"
+name = "g-server"
 version = "0.0.0"
 edition = "2024"
 authors = ["Muhammad Fathir Irhas <fathir.irhas@gmail.com>"]
 description = "..."
-license = "..."
-repository = "https://github.com/<username>/<repo>"
-documentation = "https://docs.rs/<repo>"
-keywords = ["...", "..."]
-categories = ["...", "..."]
+license = "MIT"
+repository = "https://github.com/mfirhas/g-server"
+documentation = "https://docs.rs/g-server"
+keywords = ["http", "sse", "websocket", "server"]
+categories = ["http"]
 rust-version = "1.86.0"
 exclude = [
   "**/*_test.rs",
