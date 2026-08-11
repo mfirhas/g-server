@@ -75,17 +75,3 @@ GServer
 ```
 
 ### Request & Response
-```
-g-server
-└── GServer HTTP API
-    ├── Request
-    │   ├── Method
-    │   ├── URI
-    │   ├── Headers
-    │   └── Body
-    │
-    └── Response
-        ├── Status
-        ├── Headers
-        └── Body
-`
