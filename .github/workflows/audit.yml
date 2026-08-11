@@ -1,0 +1,48 @@
+name: audit
+
+env:
+  RUST_VERSION: 1.95.0
+  CACHE_NAME: ${{ github.repository }}-cache-audit
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.repository }}-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+
+      - name: Cache run data
+        id: audit-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-${{ env.CACHE_NAME }}-${{ env.RUST_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.CACHE_NAME }}-
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_VERSION }}
+          override: true
+
+      - name: Install cargo-audit
+        run: which cargo-audit || cargo install --locked cargo-audit
+
+      - name: Run cargo audit
+        uses: actions-rs/cargo@v1
+        with:
+          command: audit
+          args: --deny warnings

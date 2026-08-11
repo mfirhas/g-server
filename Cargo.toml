@@ -1,0 +1,40 @@
+[package]
+name = "rust-template"
+version = "0.0.0"
+edition = "2024"
+authors = ["Muhammad Fathir Irhas <fathir.irhas@gmail.com>"]
+description = "..."
+license = "..."
+repository = "https://github.com/<username>/<repo>"
+documentation = "https://docs.rs/<repo>"
+keywords = ["...", "..."]
+categories = ["...", "..."]
+rust-version = "1.86.0"
+exclude = [
+  "**/*_test.rs",
+  "tests/**",
+  "benches/**",
+  "examples/**",
+  ".github/**",
+  ".gitignore",
+  "Makefile",
+  "AUDIT.md",
+  "AGENTS.md",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[[test]]
+name = "test"
+path = "tests/test.rs"
+
+[[bench]]
+name = "bench"
+harness = false
+
+[dependencies]
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+

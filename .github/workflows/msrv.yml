@@ -1,0 +1,48 @@
+name: msrv
+
+env:
+  RUST_VERSION: 1.95.0
+  CACHE_NAME: ${{ github.repository }}-cache-msrv
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.repository }}-msrv
+  cancel-in-progress: true
+
+jobs:
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v6
+
+      - name: Cache run data
+        id: msrv-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            target
+          key: ${{ runner.os }}-${{ env.CACHE_NAME }}-${{ env.RUST_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.CACHE_NAME }}-
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.RUST_VERSION }}
+          override: true
+
+      - name: Install cargo-msrv
+        run: which cargo-msrv || cargo install cargo-msrv
+
+      - name: Verify MSRV
+        uses: actions-rs/cargo@v1
+        with:
+          command: msrv
+          args: verify --all-features
