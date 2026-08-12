@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use super::{Handler, Route};
 use crate::http::Method;
 
-pub struct Router<Req, Res, Routes = ()> {
-    routes: Routes,
+use super::{Handler, Route};
+
+pub struct Router<Req, Res, R = ()> {
+    routes: R,
     _marker: PhantomData<fn(Req) -> Res>,
 }
 
@@ -76,11 +77,14 @@ impl<Req, Res, R> Router<Req, Res, R> {
         }
     }
 
-    pub fn nest(
+    pub fn nest<P, NR>(
         self,
-        prefix: impl Into<Cow<'static, str>>,
-        router: Router<Req, Res, impl Sized>,
-    ) -> Router<Req, Res, Routes<Nested<Cow<'static, str>, impl Sized>, R>> {
+        prefix: P,
+        router: Router<Req, Res, NR>,
+    ) -> Router<Req, Res, Routes<Nested<Cow<'static, str>, NR>, R>>
+    where
+        P: Into<Cow<'static, str>>,
+    {
         Router {
             routes: Routes {
                 item: Nested {
