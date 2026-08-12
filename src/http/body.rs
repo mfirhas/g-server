@@ -1,5 +1,6 @@
 use ::serde::{Serialize, de::DeserializeOwned};
 
+#[allow(async_fn_in_trait)]
 pub trait Body {
     type Error;
 
