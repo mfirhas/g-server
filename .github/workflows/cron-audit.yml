@@ -5,10 +5,10 @@ env:
   CACHE_NAME: ${{ github.repository }}-cache-cron-audit
 
 on:
-  workflow_dispatch:
-  schedule:
-    # Every Monday at 00:00 UTC
-    - cron: "0 0 * * 1"
+  # workflow_dispatch:
+  # schedule:
+  #   # Every Monday at 00:00 UTC
+  #   - cron: "0 0 * * 1"
 
 concurrency:
   group: ${{ github.repository }}-cron-audit
