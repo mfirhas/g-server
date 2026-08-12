@@ -5,4 +5,4 @@ mod route;
 pub use route::Route;
 
 mod router;
-pub use router::{Router, Routes};
+pub use router::{Nested, Router, Routes};

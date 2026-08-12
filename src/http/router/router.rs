@@ -97,6 +97,10 @@ impl<Req, Res, R> Router<Req, Res, R> {
         }
     }
 
+    pub fn into_routes(self) -> R {
+        self.routes
+    }
+
     pub fn get<H>(
         self,
         path: impl Into<Cow<'static, str>>,
