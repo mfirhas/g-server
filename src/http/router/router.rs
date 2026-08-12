@@ -9,22 +9,41 @@ pub struct Router<Req, Res, Routes = ()> {
     _marker: PhantomData<fn(Req) -> Res>,
 }
 
-pub struct Routes<H, Tail> {
-    route: Route<H>,
+pub struct Routes<T, Tail> {
+    item: T,
     tail: Tail,
 }
 
-impl<H, Tail> Routes<H, Tail> {
-    pub fn route(&self) -> &Route<H> {
-        &self.route
+impl<T, Tail> Routes<T, Tail> {
+    pub fn item(&self) -> &T {
+        &self.item
     }
 
     pub fn tail(&self) -> &Tail {
         &self.tail
     }
 
-    pub fn into_parts(self) -> (Route<H>, Tail) {
-        (self.route, self.tail)
+    pub fn into_parts(self) -> (T, Tail) {
+        (self.item, self.tail)
+    }
+}
+
+pub struct Nested<P, R> {
+    prefix: P,
+    routes: R,
+}
+
+impl<P, R> Nested<P, R> {
+    pub fn prefix(&self) -> &P {
+        &self.prefix
+    }
+
+    pub fn routes(&self) -> &R {
+        &self.routes
+    }
+
+    pub fn into_parts(self) -> (P, R) {
+        (self.prefix, self.routes)
     }
 }
 
@@ -44,13 +63,30 @@ impl<Req, Res> Default for Router<Req, Res> {
 }
 
 impl<Req, Res, R> Router<Req, Res, R> {
-    pub fn route<H>(self, route: Route<H>) -> Router<Req, Res, Routes<H, R>>
+    pub fn route<H>(self, route: Route<H>) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
         Router {
             routes: Routes {
-                route,
+                item: route,
+                tail: self.routes,
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn nest(
+        self,
+        prefix: impl Into<Cow<'static, str>>,
+        router: Router<Req, Res, impl Sized>,
+    ) -> Router<Req, Res, Routes<Nested<Cow<'static, str>, impl Sized>, R>> {
+        Router {
+            routes: Routes {
+                item: Nested {
+                    prefix: prefix.into(),
+                    routes: router.routes,
+                },
                 tail: self.routes,
             },
             _marker: PhantomData,
@@ -61,7 +97,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -72,7 +108,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -83,7 +119,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -94,7 +130,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -105,7 +141,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -116,7 +152,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -127,7 +163,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -138,7 +174,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -149,7 +185,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
@@ -160,7 +196,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<H, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>>
     where
         H: Handler<Req, Res>,
     {
