@@ -1,33 +1,31 @@
 use std::fmt;
 
-/// An HTTP request URI.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Uri(String);
+pub trait Uri {
+    fn scheme(&self) -> Option<&str>;
+    fn authority(&self) -> Option<&str>;
+    fn path(&self) -> &str;
+    fn query(&self) -> Option<&str>;
+    fn fragment(&self) -> Option<&str>;
 
-impl Uri {
-    pub fn new(uri: impl Into<String>) -> Self {
-        Self(uri.into())
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for Uri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
+        if let Some(scheme) = self.scheme() {
+            write!(f, "{scheme}:")?;
+        }
 
-impl From<String> for Uri {
-    fn from(uri: String) -> Self {
-        Self::new(uri)
-    }
-}
+        if let Some(authority) = self.authority() {
+            write!(f, "//{authority}")?;
+        }
 
-impl From<&str> for Uri {
-    fn from(uri: &str) -> Self {
-        Self::new(uri)
+        f.write_str(self.path())?;
+
+        if let Some(query) = self.query() {
+            write!(f, "?{query}")?;
+        }
+
+        if let Some(fragment) = self.fragment() {
+            write!(f, "#{fragment}")?;
+        }
+
+        Ok(())
     }
 }

@@ -2,25 +2,28 @@ use super::{body::Body, header::Header, method::Method, uri::Uri};
 
 /// An HTTP request.
 #[derive(Debug)]
-pub struct Request {
+pub struct Request<URI, H, B> {
     method: Method,
-    uri: Uri,
-    headers: Header,
-    body: Body,
+    uri: URI,
+    header: H,
+    body: B,
 }
 
-impl Request {
-    pub fn new(
-        method: impl Into<Method>,
-        uri: impl Into<Uri>,
-        headers: Header,
-        body: impl Into<Body>,
-    ) -> Self {
+impl<URI, H, B> Request<URI, H, B>
+where
+    URI: Uri,
+    H: Header,
+    B: Body,
+{
+    pub fn new<M>(method: M, uri: URI, header: H, body: B) -> Self
+    where
+        M: Into<Method>,
+    {
         Self {
             method: method.into(),
-            uri: uri.into(),
-            headers,
-            body: body.into(),
+            uri,
+            header,
+            body,
         }
     }
 
@@ -28,15 +31,15 @@ impl Request {
         &self.method
     }
 
-    pub fn uri(&self) -> &Uri {
+    pub fn uri(&self) -> &URI {
         &self.uri
     }
 
-    pub fn headers(&self) -> &Header {
-        &self.headers
+    pub fn headers(&self) -> &H {
+        &self.header
     }
 
-    pub fn body(&self) -> &Body {
+    pub fn body(&self) -> &B {
         &self.body
     }
 
@@ -44,23 +47,23 @@ impl Request {
         &mut self.method
     }
 
-    pub fn uri_mut(&mut self) -> &mut Uri {
+    pub fn uri_mut(&mut self) -> &mut URI {
         &mut self.uri
     }
 
-    pub fn headers_mut(&mut self) -> &mut Header {
-        &mut self.headers
+    pub fn headers_mut(&mut self) -> &mut H {
+        &mut self.header
     }
 
-    pub fn body_mut(&mut self) -> &mut Body {
+    pub fn body_mut(&mut self) -> &mut B {
         &mut self.body
     }
 
-    pub fn into_body(self) -> Body {
+    pub fn into_body(self) -> B {
         self.body
     }
 
-    pub fn into_parts(self) -> (Method, Uri, Header, Body) {
-        (self.method, self.uri, self.headers, self.body)
+    pub fn into_parts(self) -> (Method, URI, H, B) {
+        (self.method, self.uri, self.header, self.body)
     }
 }

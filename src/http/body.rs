@@ -1,63 +1,20 @@
-/// The body of an HTTP message.
-#[derive(Debug, Default)]
-pub struct Body {
-    bytes: Vec<u8>,
-}
+use ::serde::{Serialize, de::DeserializeOwned};
 
-impl Body {
-    /// Creates an empty body.
-    pub fn empty() -> Self {
-        Self::default()
-    }
+pub trait Body {
+    type Error;
 
-    /// Creates a body from bytes.
-    pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Self {
-        Self {
-            bytes: bytes.into(),
-        }
-    }
+    async fn to_text(self) -> Result<String, Self::Error>;
 
-    /// Returns the body as bytes.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
+    async fn to_json<T>(self) -> Result<T, Self::Error>
+    where
+        T: DeserializeOwned;
 
-    /// Returns the body length in bytes.
-    pub fn len(&self) -> usize {
-        self.bytes.len()
-    }
+    fn from_text(text: String) -> Result<Self, Self::Error>
+    where
+        Self: Sized;
 
-    /// Returns whether the body is empty.
-    pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
-    }
-
-    /// Consumes the body and returns its bytes.
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.bytes
-    }
-}
-
-impl From<Vec<u8>> for Body {
-    fn from(bytes: Vec<u8>) -> Self {
-        Self::from_bytes(bytes)
-    }
-}
-
-impl From<&[u8]> for Body {
-    fn from(bytes: &[u8]) -> Self {
-        Self::from_bytes(bytes)
-    }
-}
-
-impl From<String> for Body {
-    fn from(value: String) -> Self {
-        Self::from_bytes(value.into_bytes())
-    }
-}
-
-impl From<&str> for Body {
-    fn from(value: &str) -> Self {
-        Self::from_bytes(value.as_bytes())
-    }
+    fn from_json<T>(value: T) -> Result<Self, Self::Error>
+    where
+        Self: Sized,
+        T: Serialize;
 }

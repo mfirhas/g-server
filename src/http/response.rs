@@ -2,15 +2,22 @@ use super::{body::Body, header::Header, status::Status};
 
 /// An HTTP response.
 #[derive(Debug)]
-pub struct Response {
+pub struct Response<H, B> {
     status: Status,
-    headers: Header,
-    body: Body,
+    headers: H,
+    body: B,
 }
 
-impl Response {
+impl<H, B> Response<H, B>
+where
+    H: Header,
+    B: Body,
+{
     /// Creates a new HTTP response.
-    pub fn new(status: impl Into<Status>, headers: Header, body: impl Into<Body>) -> Self {
+    pub fn new<S>(status: S, headers: H, body: B) -> Self
+    where
+        S: Into<Status>,
+    {
         Self {
             status: status.into(),
             headers,
@@ -24,12 +31,12 @@ impl Response {
     }
 
     /// Returns the response headers.
-    pub fn headers(&self) -> &Header {
+    pub fn headers(&self) -> &H {
         &self.headers
     }
 
     /// Returns the response body.
-    pub fn body(&self) -> &Body {
+    pub fn body(&self) -> &B {
         &self.body
     }
 
@@ -39,22 +46,22 @@ impl Response {
     }
 
     /// Returns a mutable reference to the response headers.
-    pub fn headers_mut(&mut self) -> &mut Header {
+    pub fn headers_mut(&mut self) -> &mut H {
         &mut self.headers
     }
 
     /// Returns a mutable reference to the response body.
-    pub fn body_mut(&mut self) -> &mut Body {
+    pub fn body_mut(&mut self) -> &mut B {
         &mut self.body
     }
 
     /// Consumes the response and returns its body.
-    pub fn into_body(self) -> Body {
+    pub fn into_body(self) -> B {
         self.body
     }
 
     /// Consumes the response and returns its components.
-    pub fn into_parts(self) -> (Status, Header, Body) {
+    pub fn into_parts(self) -> (Status, H, B) {
         (self.status, self.headers, self.body)
     }
 }

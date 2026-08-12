@@ -1,13 +1,20 @@
-pub mod uri;
+mod uri;
+pub use uri::Uri;
 
-pub mod header;
+mod header;
+pub use header::Header;
 
-pub mod method;
+mod method;
+pub use method::Method;
 
-pub mod body;
+mod body;
+pub use body::Body;
 
-pub mod request;
+mod request;
+pub use request::Request;
 
-pub mod status;
+mod status;
+pub use status::Status;
 
-pub mod response;
+mod response;
+pub use response::Response;

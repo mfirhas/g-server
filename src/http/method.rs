@@ -1,81 +1,81 @@
-use std::{borrow::Cow, fmt};
+use std::fmt;
 
 /// An HTTP request method.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Method(Cow<'static, str>);
+pub enum Method {
+    Get,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Head,
+    Options,
+    Connect,
+    Trace,
+    Query,
+    Custom(String),
+}
 
 impl Method {
-    pub const GET: Self = Self(Cow::Borrowed("GET"));
-    pub const POST: Self = Self(Cow::Borrowed("POST"));
-    pub const PUT: Self = Self(Cow::Borrowed("PUT"));
-    pub const PATCH: Self = Self(Cow::Borrowed("PATCH"));
-    pub const DELETE: Self = Self(Cow::Borrowed("DELETE"));
-    pub const HEAD: Self = Self(Cow::Borrowed("HEAD"));
-    pub const OPTIONS: Self = Self(Cow::Borrowed("OPTIONS"));
-    pub const CONNECT: Self = Self(Cow::Borrowed("CONNECT"));
-    pub const TRACE: Self = Self(Cow::Borrowed("TRACE"));
-
-    /// Creates a custom HTTP method.
-    pub fn new(method: impl Into<String>) -> Self {
-        Self(Cow::Owned(method.into()))
-    }
-
-    /// Returns the method as a string slice.
     pub fn as_str(&self) -> &str {
-        &self.0
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+            Self::Put => "PUT",
+            Self::Patch => "PATCH",
+            Self::Delete => "DELETE",
+            Self::Head => "HEAD",
+            Self::Options => "OPTIONS",
+            Self::Connect => "CONNECT",
+            Self::Trace => "TRACE",
+            Self::Query => "QUERY",
+            Self::Custom(method) => method,
+        }
     }
 
     pub fn is_get(&self) -> bool {
-        self == &Self::GET
+        matches!(self, Self::Get)
     }
 
     pub fn is_post(&self) -> bool {
-        self == &Self::POST
+        matches!(self, Self::Post)
     }
 
     pub fn is_put(&self) -> bool {
-        self == &Self::PUT
+        matches!(self, Self::Put)
     }
 
     pub fn is_patch(&self) -> bool {
-        self == &Self::PATCH
+        matches!(self, Self::Patch)
     }
 
     pub fn is_delete(&self) -> bool {
-        self == &Self::DELETE
+        matches!(self, Self::Delete)
     }
 
     pub fn is_head(&self) -> bool {
-        self == &Self::HEAD
+        matches!(self, Self::Head)
     }
 
     pub fn is_options(&self) -> bool {
-        self == &Self::OPTIONS
+        matches!(self, Self::Options)
     }
 
     pub fn is_connect(&self) -> bool {
-        self == &Self::CONNECT
+        matches!(self, Self::Connect)
     }
 
     pub fn is_trace(&self) -> bool {
-        self == &Self::TRACE
+        matches!(self, Self::Trace)
+    }
+
+    pub fn is_query(&self) -> bool {
+        matches!(self, Self::Query)
     }
 }
 
 impl fmt::Display for Method {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
-    }
-}
-
-impl From<String> for Method {
-    fn from(method: String) -> Self {
-        Self::new(method)
-    }
-}
-
-impl From<&str> for Method {
-    fn from(method: &str) -> Self {
-        Self::new(method)
     }
 }
