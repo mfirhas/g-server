@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin};
+use std::{future::Future, marker::PhantomData, pin::Pin};
 
 use axum::{
     Router as AxumRouter,
@@ -16,41 +16,58 @@ use crate::http::{
 type Req = Request<axum::http::Uri, axum::http::HeaderMap, Body>;
 type Res = Response<axum::http::HeaderMap, Body>;
 
-pub trait IntoAxumRouter {
-    fn into_axum_router(self) -> AxumRouter;
+pub trait IntoAxumRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_router(self, state: S) -> AxumRouter<S>;
 }
 
-impl IntoAxumRouter for () {
-    fn into_axum_router(self) -> AxumRouter {
-        AxumRouter::new()
+impl<S> IntoAxumRouter<S> for ()
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_router(self, state: S) -> AxumRouter<S> {
+        AxumRouter::new().with_state(state)
     }
 }
 
-impl<T, Tail> IntoAxumRouter for Routes<T, Tail>
+impl<T, Tail, S> IntoAxumRouter<S> for Routes<T, Tail>
 where
-    T: IntoAxumRoute,
-    Tail: IntoAxumRouter,
+    T: IntoAxumRoute<S>,
+    Tail: IntoAxumRouter<S>,
+    S: Clone + Send + Sync + 'static,
 {
-    fn into_axum_router(self) -> AxumRouter {
+    fn into_axum_router(self, state: S) -> AxumRouter<S> {
         let (item, tail) = self.into_parts();
 
-        item.into_axum_route(tail.into_axum_router())
+        let router = tail.into_axum_router(state.clone());
+
+        item.into_axum_route(router, state)
     }
 }
 
-trait IntoAxumRoute {
-    fn into_axum_route(self, router: AxumRouter) -> AxumRouter;
+trait IntoAxumRoute<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_route(self, router: AxumRouter<S>, state: S) -> AxumRouter<S>;
 }
 
-impl<H> IntoAxumRoute for Route<H>
+impl<H, S> IntoAxumRoute<S> for Route<H>
 where
-    H: Handler<Req, Res> + Clone + Send + Sync + 'static,
+    H: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
     H::Future: Send + 'static,
+    S: Clone + Send + Sync + 'static,
 {
-    fn into_axum_route(self, router: AxumRouter) -> AxumRouter {
+    fn into_axum_route(self, router: AxumRouter<S>, _state: S) -> AxumRouter<S> {
         let method = self.method().clone();
         let path = self.path().to_owned();
-        let handler = AxumHandler(self.into_handler());
+
+        let handler = AxumHandler {
+            handler: self.into_handler(),
+            _state: PhantomData,
+        };
 
         match method {
             crate::http::Method::Get => router.route(&path, get(handler)),
@@ -76,51 +93,63 @@ where
     }
 }
 
-impl<P, R> IntoAxumRoute for Nested<P, R>
+impl<P, R, S> IntoAxumRoute<S> for Nested<P, R>
 where
     P: AsRef<str>,
-    R: IntoAxumRouter,
+    R: IntoAxumRouter<S>,
+    S: Clone + Send + Sync + 'static,
 {
-    fn into_axum_route(self, router: AxumRouter) -> AxumRouter {
+    fn into_axum_route(self, router: AxumRouter<S>, state: S) -> AxumRouter<S> {
         let (prefix, routes) = self.into_parts();
 
-        router.nest(prefix.as_ref(), routes.into_axum_router())
+        router.nest(prefix.as_ref(), routes.into_axum_router(state))
     }
 }
 
-struct AxumHandler<H>(H);
+struct AxumHandler<H, S> {
+    handler: H,
+    _state: PhantomData<fn() -> S>,
+}
 
-impl<H> Clone for AxumHandler<H>
+impl<H, S> Clone for AxumHandler<H, S>
 where
     H: Clone,
 {
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self {
+            handler: self.handler.clone(),
+            _state: PhantomData,
+        }
     }
 }
 
-impl<H> axum::handler::Handler<(), ()> for AxumHandler<H>
+impl<H, S> axum::handler::Handler<(), S> for AxumHandler<H, S>
 where
-    H: Handler<Req, Res> + Clone + Send + Sync + 'static,
+    H: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
     H::Future: Send + 'static,
+    S: Clone + Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = AxumResponse> + Send + 'static>>;
 
-    fn call(self, request: AxumRequest<Body>, _state: ()) -> Self::Future {
+    fn call(self, request: AxumRequest<Body>, state: S) -> Self::Future {
         Box::pin(async move {
             let request = Req::from(request);
-            let response = self.0.call(request).await;
+
+            let response = self.handler.call(&state, request).await;
 
             AxumResponse::from(response)
         })
     }
 }
 
-impl<R> Router<Req, Res, R>
+impl<R, S> Router<Req, Res, R, S>
 where
-    R: IntoAxumRouter,
+    R: IntoAxumRouter<S>,
+    S: Clone + Send + Sync + 'static,
 {
-    pub fn into_axum(self) -> AxumRouter {
-        self.into_routes().into_axum_router()
+    pub fn into_axum(self) -> AxumRouter<S> {
+        let (routes, state) = self.into_parts();
+
+        routes.into_axum_router(state)
     }
 }

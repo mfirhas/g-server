@@ -5,8 +5,9 @@ use crate::http::Method;
 
 use super::{Handler, Route};
 
-pub struct Router<Req, Res, R = ()> {
+pub struct Router<Req, Res, R = (), S = ()> {
     routes: R,
+    state: S,
     _marker: PhantomData<fn(Req) -> Res>,
 }
 
@@ -52,6 +53,7 @@ impl<Req, Res> Router<Req, Res> {
     pub fn new() -> Self {
         Self {
             routes: (),
+            state: (),
             _marker: PhantomData,
         }
     }
@@ -63,16 +65,25 @@ impl<Req, Res> Default for Router<Req, Res> {
     }
 }
 
-impl<Req, Res, R> Router<Req, Res, R> {
-    pub fn route<H>(self, route: Route<H>) -> Router<Req, Res, Routes<Route<H>, R>>
+impl<Req, Res, R, S> Router<Req, Res, R, S> {
+    pub fn with_state<NS>(self, state: NS) -> Router<Req, Res, R, NS> {
+        Router {
+            routes: self.routes,
+            state,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn route<H>(self, route: Route<H>) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         Router {
             routes: Routes {
                 item: route,
                 tail: self.routes,
             },
+            state: self.state,
             _marker: PhantomData,
         }
     }
@@ -80,8 +91,8 @@ impl<Req, Res, R> Router<Req, Res, R> {
     pub fn nest<P, NR>(
         self,
         prefix: P,
-        router: Router<Req, Res, NR>,
-    ) -> Router<Req, Res, Routes<Nested<Cow<'static, str>, NR>, R>>
+        router: Router<Req, Res, NR, S>,
+    ) -> Router<Req, Res, Routes<Nested<Cow<'static, str>, NR>, R>, S>
     where
         P: Into<Cow<'static, str>>,
     {
@@ -93,6 +104,7 @@ impl<Req, Res, R> Router<Req, Res, R> {
                 },
                 tail: self.routes,
             },
+            state: self.state,
             _marker: PhantomData,
         }
     }
@@ -101,13 +113,17 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self.routes
     }
 
+    pub fn into_parts(self) -> (R, S) {
+        (self.routes, self.state)
+    }
+
     pub fn get<H>(
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Get, path, handler))
     }
@@ -116,9 +132,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Post, path, handler))
     }
@@ -127,9 +143,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Put, path, handler))
     }
@@ -138,9 +154,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Patch, path, handler))
     }
@@ -149,9 +165,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Delete, path, handler))
     }
@@ -160,9 +176,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Head, path, handler))
     }
@@ -171,9 +187,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Options, path, handler))
     }
@@ -182,9 +198,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Connect, path, handler))
     }
@@ -193,9 +209,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Trace, path, handler))
     }
@@ -204,9 +220,9 @@ impl<Req, Res, R> Router<Req, Res, R> {
         self,
         path: impl Into<Cow<'static, str>>,
         handler: H,
-    ) -> Router<Req, Res, Routes<Route<H>, R>>
+    ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
-        H: Handler<Req, Res>,
+        H: Handler<Req, Res, S>,
     {
         self.route(Route::new(Method::Query, path, handler))
     }
