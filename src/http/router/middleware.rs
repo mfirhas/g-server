@@ -1,5 +1,7 @@
 use std::future::Future;
 
+use crate::http::IntoResponse;
+
 use super::Handler;
 
 pub trait Middleware<Req, Res, S = ()>
@@ -7,6 +9,7 @@ where
     Req: Send,
     S: Sync,
     Self: Sync,
+    Res: IntoResponse,
 {
     type Handler<H>: Handler<Req, Res, S>
     where
@@ -21,6 +24,7 @@ pub trait MiddlewareFn<Req, Res, S = ()>: Sync
 where
     Req: Send,
     S: Sync,
+    Res: IntoResponse,
 {
     type Future<'a, H>: Future<Output = Res> + Send + 'a
     where
@@ -64,6 +68,7 @@ where
     Req: Send,
     S: Sync,
     M: MiddlewareFn<Req, Res, S> + Sync,
+    Res: IntoResponse,
 {
     type Handler<H>
         = MiddlewareHandler<M, H>
@@ -84,6 +89,7 @@ where
     S: Sync,
     M: MiddlewareFn<Req, Res, S> + Sync,
     H: Handler<Req, Res, S> + Sync,
+    Res: IntoResponse,
 {
     type Future<'a>
         = M::Future<'a, H>

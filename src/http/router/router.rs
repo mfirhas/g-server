@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use crate::http::{Method, router::middleware::MiddlewareRoutes};
+use crate::http::{IntoResponse, Method, router::middleware::MiddlewareRoutes};
 
 use super::{Handler, Route};
 
@@ -77,6 +77,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     pub fn route<H>(self, route: Route<H>) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         Router {
             routes: Routes {
@@ -135,6 +136,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Get, path, handler))
     }
@@ -146,6 +148,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Post, path, handler))
     }
@@ -157,6 +160,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Put, path, handler))
     }
@@ -168,6 +172,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Patch, path, handler))
     }
@@ -179,6 +184,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Delete, path, handler))
     }
@@ -190,6 +196,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Head, path, handler))
     }
@@ -201,6 +208,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Options, path, handler))
     }
@@ -212,6 +220,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Connect, path, handler))
     }
@@ -223,6 +232,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Trace, path, handler))
     }
@@ -234,6 +244,7 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
     ) -> Router<Req, Res, Routes<Route<H>, R>, S>
     where
         H: Handler<Req, Res, S>,
+        Res: IntoResponse,
     {
         self.route(Route::new(Method::Query, path, handler))
     }

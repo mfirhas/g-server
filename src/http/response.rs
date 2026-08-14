@@ -65,3 +65,38 @@ where
         (self.status, self.headers, self.body)
     }
 }
+
+// into response
+
+pub trait IntoResponse {
+    type Response;
+
+    fn into_response(self) -> Self::Response;
+}
+
+impl<H, B> IntoResponse for Response<H, B>
+where
+    H: Header,
+    B: Body,
+{
+    type Response = Response<H, B>;
+
+    fn into_response(self) -> Self::Response {
+        self
+    }
+}
+
+impl<T, E> IntoResponse for Result<T, E>
+where
+    T: IntoResponse,
+    E: IntoResponse<Response = T::Response>,
+{
+    type Response = T::Response;
+
+    fn into_response(self) -> Self::Response {
+        match self {
+            Ok(value) => value.into_response(),
+            Err(error) => error.into_response(),
+        }
+    }
+}

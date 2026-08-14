@@ -17,6 +17,6 @@ mod status;
 pub use status::Status;
 
 mod response;
-pub use response::Response;
+pub use response::{IntoResponse, Response};
 
 pub mod router;
