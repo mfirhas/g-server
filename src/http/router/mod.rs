@@ -8,4 +8,4 @@ mod router;
 pub use router::{Nested, Router, Routes};
 
 mod middleware;
-pub use middleware::{Middleware, MiddlewareFn, MiddlewareHandler};
+pub use middleware::{Middleware, MiddlewareFn, MiddlewareHandler, MiddlewareRoutes};

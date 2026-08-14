@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 
-use crate::http::Method;
+use crate::http::{Method, router::middleware::MiddlewareRoutes};
 
 use super::{Handler, Route};
 
@@ -115,6 +115,17 @@ impl<Req, Res, R, S> Router<Req, Res, R, S> {
 
     pub fn into_parts(self) -> (R, S) {
         (self.routes, self.state)
+    }
+
+    pub fn middleware<M>(self, middleware: M) -> Router<Req, Res, MiddlewareRoutes<M, R>, S>
+    where
+        M: Clone,
+    {
+        Router {
+            routes: MiddlewareRoutes::new(middleware, self.routes),
+            state: self.state,
+            _marker: PhantomData,
+        }
     }
 
     pub fn get<H>(

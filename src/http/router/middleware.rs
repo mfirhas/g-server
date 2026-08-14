@@ -97,3 +97,18 @@ where
         self.middleware.call(state, request, &self.handler)
     }
 }
+
+pub struct MiddlewareRoutes<M, R> {
+    middleware: M,
+    routes: R,
+}
+
+impl<M, R> MiddlewareRoutes<M, R> {
+    pub(crate) fn new(middleware: M, routes: R) -> Self {
+        Self { middleware, routes }
+    }
+
+    pub(crate) fn into_parts(self) -> (M, R) {
+        (self.middleware, self.routes)
+    }
+}
