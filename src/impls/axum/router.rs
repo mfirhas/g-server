@@ -10,7 +10,7 @@ use axum::{
 
 use crate::http::{
     Request, Response,
-    router::{Handler, Nested, Route, Router, Routes},
+    router::{Handler, Middleware, MiddlewareRoutes, Nested, Route, Router, Routes},
 };
 
 type Req = Request<axum::http::Uri, axum::http::HeaderMap, Body>;
@@ -47,6 +47,19 @@ where
     }
 }
 
+impl<M, R, S> IntoAxumRouter<S> for MiddlewareRoutes<M, R>
+where
+    M: Clone + Send + Sync + 'static,
+    R: IntoAxumRouterWithMiddleware<M, S>,
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_router(self, state: S) -> AxumRouter<S> {
+        let (middleware, routes) = self.into_parts();
+
+        routes.into_axum_router_with_middleware(state, middleware)
+    }
+}
+
 trait IntoAxumRoute<S>
 where
     S: Clone + Send + Sync + 'static,
@@ -70,12 +83,19 @@ where
 
         match method {
             crate::http::Method::Get => router.route(&path, get(handler)),
+
             crate::http::Method::Post => router.route(&path, post(handler)),
+
             crate::http::Method::Put => router.route(&path, put(handler)),
+
             crate::http::Method::Patch => router.route(&path, patch(handler)),
+
             crate::http::Method::Delete => router.route(&path, delete(handler)),
+
             crate::http::Method::Head => router.route(&path, head(handler)),
+
             crate::http::Method::Options => router.route(&path, options(handler)),
+
             crate::http::Method::Trace => router.route(&path, trace(handler)),
 
             crate::http::Method::Connect
@@ -95,6 +115,136 @@ where
         let (prefix, routes) = self.into_parts();
 
         router.nest(prefix.as_ref(), routes.into_axum_router(state))
+    }
+}
+
+/*
+ * Middleware-aware router conversion.
+ */
+
+trait IntoAxumRouterWithMiddleware<M, S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_router_with_middleware(self, state: S, middleware: M) -> AxumRouter<S>;
+}
+
+impl<M, S> IntoAxumRouterWithMiddleware<M, S> for ()
+where
+    M: Clone + Send + Sync + 'static,
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_router_with_middleware(self, state: S, _middleware: M) -> AxumRouter<S> {
+        AxumRouter::new().with_state(state)
+    }
+}
+
+impl<M, T, Tail, S> IntoAxumRouterWithMiddleware<M, S> for Routes<T, Tail>
+where
+    M: Clone + Send + Sync + 'static,
+    T: IntoAxumRouteWithMiddleware<M, S>,
+    Tail: IntoAxumRouterWithMiddleware<M, S>,
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_router_with_middleware(self, state: S, middleware: M) -> AxumRouter<S> {
+        let (item, tail) = self.into_parts();
+
+        let router = tail.into_axum_router_with_middleware(state.clone(), middleware.clone());
+
+        item.into_axum_route_with_middleware(router, state, middleware)
+    }
+}
+
+impl<M, P, R, S> IntoAxumRouteWithMiddleware<M, S> for Nested<P, R>
+where
+    M: Clone + Send + Sync + 'static,
+    P: AsRef<str>,
+    R: IntoAxumRouterWithMiddleware<M, S>,
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_route_with_middleware(
+        self,
+        router: AxumRouter<S>,
+        state: S,
+        middleware: M,
+    ) -> AxumRouter<S> {
+        let (prefix, routes) = self.into_parts();
+
+        let nested = routes.into_axum_router_with_middleware(state, middleware);
+
+        router.nest(prefix.as_ref(), nested)
+    }
+}
+
+trait IntoAxumRouteWithMiddleware<M, S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_route_with_middleware(
+        self,
+        router: AxumRouter<S>,
+        state: S,
+        middleware: M,
+    ) -> AxumRouter<S>;
+}
+
+impl<H, M, S> IntoAxumRouteWithMiddleware<M, S> for Route<H>
+where
+    H: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
+    M: Middleware<Req, Res, S> + Clone + Send + Sync + 'static,
+    M::Handler<H>: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
+    S: Clone + Send + Sync + 'static,
+{
+    fn into_axum_route_with_middleware(
+        self,
+        router: AxumRouter<S>,
+        _state: S,
+        middleware: M,
+    ) -> AxumRouter<S> {
+        let method = self.method().clone();
+        let path = self.path().to_owned();
+
+        /*
+         * This is the important part:
+         *
+         *     H
+         *     ↓
+         * M.wrap(H)
+         *     ↓
+         * MiddlewareHandler<M, H>
+         *     ↓
+         * AxumHandler
+         *
+         * The middleware remains statically dispatched.
+         */
+        let handler = middleware.wrap(self.into_handler());
+
+        let handler = AxumHandler {
+            handler,
+            _state: PhantomData,
+        };
+
+        match method {
+            crate::http::Method::Get => router.route(&path, get(handler)),
+
+            crate::http::Method::Post => router.route(&path, post(handler)),
+
+            crate::http::Method::Put => router.route(&path, put(handler)),
+
+            crate::http::Method::Patch => router.route(&path, patch(handler)),
+
+            crate::http::Method::Delete => router.route(&path, delete(handler)),
+
+            crate::http::Method::Head => router.route(&path, head(handler)),
+
+            crate::http::Method::Options => router.route(&path, options(handler)),
+
+            crate::http::Method::Trace => router.route(&path, trace(handler)),
+
+            crate::http::Method::Connect
+            | crate::http::Method::Query
+            | crate::http::Method::Custom(_) => router.route(&path, any(handler)),
+        }
     }
 }
 
@@ -118,10 +268,9 @@ where
 /*
  * Axum requires its Handler future to be Send + 'static.
  *
- * We therefore bridge the g-server Handler into Axum here.
- *
- * The g-server middleware/handler chain itself remains statically
- * dispatched. The adapter is the only framework-specific boundary.
+ * The g-server handler/middleware chain itself remains
+ * statically dispatched. The Axum adapter is the framework
+ * boundary.
  */
 impl<H, S> axum::handler::Handler<(), S> for AxumHandler<H, S>
 where
