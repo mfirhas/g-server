@@ -115,6 +115,14 @@ where
     }
 }
 
+/*
+ * Axum requires its Handler future to be Send + 'static.
+ *
+ * We therefore bridge the g-server Handler into Axum here.
+ *
+ * The g-server middleware/handler chain itself remains statically
+ * dispatched. The adapter is the only framework-specific boundary.
+ */
 impl<H, S> axum::handler::Handler<(), S> for AxumHandler<H, S>
 where
     H: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
