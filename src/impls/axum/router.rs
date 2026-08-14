@@ -57,7 +57,6 @@ where
 impl<H, S> IntoAxumRoute<S> for Route<H>
 where
     H: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
-    H::Future: Send + 'static,
     S: Clone + Send + Sync + 'static,
 {
     fn into_axum_route(self, router: AxumRouter<S>, _state: S) -> AxumRouter<S> {
@@ -71,19 +70,12 @@ where
 
         match method {
             crate::http::Method::Get => router.route(&path, get(handler)),
-
             crate::http::Method::Post => router.route(&path, post(handler)),
-
             crate::http::Method::Put => router.route(&path, put(handler)),
-
             crate::http::Method::Patch => router.route(&path, patch(handler)),
-
             crate::http::Method::Delete => router.route(&path, delete(handler)),
-
             crate::http::Method::Head => router.route(&path, head(handler)),
-
             crate::http::Method::Options => router.route(&path, options(handler)),
-
             crate::http::Method::Trace => router.route(&path, trace(handler)),
 
             crate::http::Method::Connect
@@ -126,7 +118,6 @@ where
 impl<H, S> axum::handler::Handler<(), S> for AxumHandler<H, S>
 where
     H: Handler<Req, Res, S> + Clone + Send + Sync + 'static,
-    H::Future: Send + 'static,
     S: Clone + Send + Sync + 'static,
 {
     type Future = Pin<Box<dyn Future<Output = AxumResponse> + Send + 'static>>;
