@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// An HTTP request method.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Method {
     Get,
     Post,
@@ -13,7 +13,7 @@ pub enum Method {
     Connect,
     Trace,
     Query,
-    Custom(String),
+    Any,
 }
 
 impl Method {
@@ -29,7 +29,7 @@ impl Method {
             Self::Connect => "CONNECT",
             Self::Trace => "TRACE",
             Self::Query => "QUERY",
-            Self::Custom(method) => method,
+            Self::Any => "*",
         }
     }
 

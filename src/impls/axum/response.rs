@@ -12,7 +12,15 @@ impl From<Response<axum::http::HeaderMap, axum::body::Body>>
     fn from(response: Response<axum::http::HeaderMap, axum::body::Body>) -> Self {
         let (status, headers, body) = response.into_parts();
 
-        let mut response = axum::http::Response::new(body);
+        let mut response = axum::http::Response::new(axum::body::Body::from(()));
+
+        if let Some(b) = body {
+            let mut response = axum::http::Response::new(b);
+            *response.status_mut() = status.into();
+            *response.headers_mut() = headers;
+
+            return response;
+        }
 
         *response.status_mut() = status.into();
         *response.headers_mut() = headers;

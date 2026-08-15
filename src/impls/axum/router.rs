@@ -100,7 +100,7 @@ where
 
             crate::http::Method::Connect
             | crate::http::Method::Query
-            | crate::http::Method::Custom(_) => router.route(&path, any(handler)),
+            | crate::http::Method::Any => router.route(&path, any(handler)),
         }
     }
 }
@@ -243,7 +243,7 @@ where
 
             crate::http::Method::Connect
             | crate::http::Method::Query
-            | crate::http::Method::Custom(_) => router.route(&path, any(handler)),
+            | crate::http::Method::Any => router.route(&path, any(handler)),
         }
     }
 }

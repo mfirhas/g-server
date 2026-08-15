@@ -1,11 +1,11 @@
-use super::{body::Body, header::Header, status::Status};
+use super::{Method, body::Body, header::Header, status::Status};
 
 /// An HTTP response.
 #[derive(Debug)]
 pub struct Response<H, B> {
     status: Status,
     headers: H,
-    body: B,
+    body: Option<B>,
 }
 
 impl<H, B> Response<H, B>
@@ -14,14 +14,22 @@ where
     B: Body,
 {
     /// Creates a new HTTP response.
-    pub fn new<S>(status: S, headers: H, body: B) -> Self
+    pub fn new<S>(method: Method, status: S, headers: H, body: B) -> Self
     where
         S: Into<Status>,
     {
+        let s = status.into();
+        let b: Option<B> = match (method, s, s.is_informational()) {
+            (Method::Head, _, _) => None,
+            (_, Status::NO_CONTENT | Status::NOT_MODIFIED, _) => None,
+            (_, _, true) => None,
+            _ => Some(body),
+        };
+
         Self {
-            status: status.into(),
+            status: s,
             headers,
-            body: body.into(),
+            body: b,
         }
     }
 
@@ -36,8 +44,12 @@ where
     }
 
     /// Returns the response body.
-    pub fn body(&self) -> &B {
-        &self.body
+    pub fn body(&self) -> Option<&B> {
+        self.body.as_ref()
+    }
+
+    pub fn set_body(&mut self, body: B) {
+        self.body = Some(body)
     }
 
     /// Returns a mutable reference to the response status.
@@ -51,17 +63,17 @@ where
     }
 
     /// Returns a mutable reference to the response body.
-    pub fn body_mut(&mut self) -> &mut B {
-        &mut self.body
+    pub fn body_mut(&mut self) -> Option<&mut B> {
+        self.body.as_mut()
     }
 
     /// Consumes the response and returns its body.
-    pub fn into_body(self) -> B {
+    pub fn into_body(self) -> Option<B> {
         self.body
     }
 
     /// Consumes the response and returns its components.
-    pub fn into_parts(self) -> (Status, H, B) {
+    pub fn into_parts(self) -> (Status, H, Option<B>) {
         (self.status, self.headers, self.body)
     }
 }

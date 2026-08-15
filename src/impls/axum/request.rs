@@ -15,7 +15,8 @@ impl From<axum::http::Method> for Method {
             axum::http::Method::OPTIONS => Self::Options,
             axum::http::Method::CONNECT => Self::Connect,
             axum::http::Method::TRACE => Self::Trace,
-            method => Self::Custom(method.as_str().to_owned()),
+            axum::http::Method::QUERY => Self::Query,
+            _ => Self::Any,
         }
     }
 }
