@@ -6,7 +6,7 @@ pub struct Request<URI, H, B> {
     method: Method,
     uri: URI,
     header: H,
-    body: B,
+    body: Option<B>,
 }
 
 impl<URI, H, B> Request<URI, H, B>
@@ -19,12 +19,28 @@ where
     where
         M: Into<Method>,
     {
+        let m = method.into();
+        let b: Option<B> = match m {
+            // bodyless verbs
+            Method::Get
+            | Method::Head
+            | Method::Delete
+            | Method::Options
+            | Method::Trace
+            | Method::Connect => None,
+            _ => Some(body),
+        };
+
         Self {
-            method: method.into(),
+            method: m,
             uri,
             header,
-            body,
+            body: b,
         }
+    }
+
+    pub fn set_body(&mut self, body: B) {
+        self.body = Some(body)
     }
 
     pub fn method(&self) -> &Method {
@@ -39,8 +55,8 @@ where
         &self.header
     }
 
-    pub fn body(&self) -> &B {
-        &self.body
+    pub fn body(&self) -> Option<&B> {
+        self.body.as_ref()
     }
 
     pub fn method_mut(&mut self) -> &mut Method {
@@ -55,15 +71,15 @@ where
         &mut self.header
     }
 
-    pub fn body_mut(&mut self) -> &mut B {
-        &mut self.body
+    pub fn body_mut(&mut self) -> Option<&mut B> {
+        self.body.as_mut()
     }
 
-    pub fn into_body(self) -> B {
+    pub fn into_body(self) -> Option<B> {
         self.body
     }
 
-    pub fn into_parts(self) -> (Method, URI, H, B) {
+    pub fn into_parts(self) -> (Method, URI, H, Option<B>) {
         (self.method, self.uri, self.header, self.body)
     }
 }
