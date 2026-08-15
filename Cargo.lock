@@ -312,6 +312,7 @@ dependencies = [
  "http-body-util",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]

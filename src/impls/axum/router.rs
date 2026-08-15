@@ -295,9 +295,11 @@ where
     R: IntoAxumRouter<S>,
     S: Clone + Send + Sync + 'static,
 {
-    pub fn into_axum(self) -> AxumRouter<S> {
+    pub fn into_axum(self) -> AxumRouter<()> {
         let (routes, state) = self.into_parts();
 
-        routes.into_axum_router(state)
+        routes
+            .into_axum_router(state.clone())
+            .with_state::<()>(state)
     }
 }

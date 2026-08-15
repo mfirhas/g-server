@@ -34,6 +34,7 @@ name = "bench"
 harness = false
 
 [dependencies]
+tokio = { version = "1", features = ["net", "rt", "macros"] }
 axum = "0.8.9"
 bytes = "1"
 http-body-util = "0.1.4"
