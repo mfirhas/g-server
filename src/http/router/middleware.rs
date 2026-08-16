@@ -32,7 +32,7 @@ where
         S: 'a,
         H: Handler<Req, Res, S> + Sync + 'a;
 
-    fn call<'a, H>(&'a self, state: &'a S, request: Req, next: &'a H) -> Self::Future<'a, H>
+    fn exec<'a, H>(&'a self, state: &'a S, request: Req, next: &'a H) -> Self::Future<'a, H>
     where
         H: Handler<Req, Res, S> + Sync + 'a;
 }
@@ -100,7 +100,7 @@ where
         H: 'a;
 
     fn exec<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a> {
-        self.middleware.call(state, request, &self.handler)
+        self.middleware.exec(state, request, &self.handler)
     }
 }
 
