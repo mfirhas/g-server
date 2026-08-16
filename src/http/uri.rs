@@ -1,5 +1,3 @@
-use std::fmt;
-
 pub trait Uri {
     fn scheme(&self) -> Option<&str>;
     fn authority(&self) -> Option<&str>;
@@ -7,25 +5,26 @@ pub trait Uri {
     fn query(&self) -> Option<&str>;
     fn fragment(&self) -> Option<&str>;
 
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn display(&self) -> String {
+        let mut uri = String::new();
+
         if let Some(scheme) = self.scheme() {
-            write!(f, "{scheme}:")?;
+            uri.push_str(scheme);
+            uri.push(':');
         }
 
         if let Some(authority) = self.authority() {
-            write!(f, "//{authority}")?;
+            uri.push_str("//");
+            uri.push_str(authority);
         }
 
-        f.write_str(self.path())?;
+        uri.push_str(self.path());
 
         if let Some(query) = self.query() {
-            write!(f, "?{query}")?;
+            uri.push('?');
+            uri.push_str(query);
         }
 
-        if let Some(fragment) = self.fragment() {
-            write!(f, "#{fragment}")?;
-        }
-
-        Ok(())
+        uri
     }
 }
