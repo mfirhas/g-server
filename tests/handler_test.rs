@@ -1,6 +1,7 @@
 use ::g_server::http::router::Handler;
 use ::g_server::http::{Method, Request, Response, Status};
 use axum::http::HeaderMap;
+use g_server::http::Body;
 
 type Req = Request<axum::http::Uri, axum::http::HeaderMap, axum::body::Body>;
 type Res = Response<axum::http::HeaderMap, axum::body::Body>;
@@ -26,6 +27,9 @@ async fn handler_test() {
 
     assert_eq!(response.status(), &Status::OK);
     assert!(response.headers().is_empty());
+    assert!(response.body().is_some());
+    let resp_body = response.into_body().unwrap().to_text().await.unwrap();
+    assert_eq!(resp_body, "hello");
 }
 
 // fn handler(_state: &(), _request: Req) -> impl std::future::Future<Output = Res> + Send + 'static {
