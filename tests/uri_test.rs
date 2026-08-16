@@ -3,7 +3,7 @@ use axum::http::uri::Scheme;
 
 #[test]
 fn uri() {
-    let uri = "https://example.com/hello/world?foo=bar"
+    let uri = "https://example.com/hello/world?foo=bar#fragment"
         .parse::<axum::http::Uri>()
         .unwrap();
 
