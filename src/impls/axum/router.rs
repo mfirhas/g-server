@@ -283,7 +283,7 @@ where
         Box::pin(async move {
             let request = Req::from(request);
 
-            let response = self.handler.call(&state, request).await;
+            let response = self.handler.exec(&state, request).await;
 
             AxumResponse::from(response)
         })
