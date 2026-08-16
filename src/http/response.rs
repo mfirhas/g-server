@@ -1,4 +1,4 @@
-use super::{Method, body::Body, header::Header, status::Status};
+use super::{body::Body, header::Header, status::Status};
 
 /// An HTTP response.
 #[derive(Debug)]
@@ -14,15 +14,14 @@ where
     B: Body,
 {
     /// Creates a new HTTP response.
-    pub fn new<S>(method: Method, status: S, headers: H, body: B) -> Self
+    pub fn new<S>(status: S, headers: H, body: B) -> Self
     where
         S: Into<Status>,
     {
         let s = status.into();
-        let b: Option<B> = match (method, s, s.is_informational()) {
-            (Method::Head, _, _) => None,
-            (_, Status::NO_CONTENT | Status::NOT_MODIFIED, _) => None,
-            (_, _, true) => None,
+        let b: Option<B> = match (s, s.is_informational()) {
+            (Status::NO_CONTENT | Status::NOT_MODIFIED, _) => None,
+            (_, true) => None,
             _ => Some(body),
         };
 

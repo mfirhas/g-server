@@ -13,8 +13,7 @@ fn body() -> axum::body::Body {
 
 #[tokio::test]
 async fn response_test() {
-    let method = Method::Get;
-    let mut response = Res::new(method, Status::OK, header(), body());
+    let mut response = Res::new(Status::OK, header(), body());
 
     // Getters.
 
@@ -37,7 +36,7 @@ async fn response_test() {
 
     // into_body.
 
-    let mut response = Res::new(method, Status::OK, header(), body());
+    let mut response = Res::new(Status::OK, header(), body());
 
     #[derive(Debug, Deserialize, Clone)]
     struct User {
@@ -55,7 +54,7 @@ async fn response_test() {
 
     // into_parts.
 
-    let response = Res::new(method, Status::ACCEPTED, header(), body());
+    let response = Res::new(Status::ACCEPTED, header(), body());
 
     let (status, headers, _body) = response.into_parts();
 
@@ -67,14 +66,14 @@ async fn response_test() {
 
     // IntoResponse for Response.
 
-    let response = Res::new(Method::Head, Status::OK, header(), body());
+    let response = Res::new(Status::OK, header(), body());
 
     assert_eq!(response.status(), &Status::OK);
-    assert!(response.body().is_none());
+    assert!(response.body().is_some());
 
     // IntoResponse for Result<T, E> — Ok.
 
-    let response = Res::new(method, Status::NO_CONTENT, header(), body());
+    let response = Res::new(Status::NO_CONTENT, header(), body());
 
     let result: Result<Res, Res> = Ok(response);
 
@@ -85,7 +84,7 @@ async fn response_test() {
 
     // ---
 
-    let response = Res::new(method, Status::NOT_MODIFIED, header(), body());
+    let response = Res::new(Status::NOT_MODIFIED, header(), body());
 
     let result: Result<Res, Res> = Ok(response);
 
@@ -95,7 +94,7 @@ async fn response_test() {
     assert!(converted.body().is_none());
 
     // informational
-    let response = Res::new(method, Status::CONTINUE, header(), body());
+    let response = Res::new(Status::CONTINUE, header(), body());
 
     let result: Result<Res, Res> = Ok(response);
 
@@ -104,7 +103,7 @@ async fn response_test() {
     assert_eq!(converted.status(), &Status::CONTINUE);
     assert!(converted.body().is_none());
 
-    let response = Res::new(method, Status::SWITCHING_PROTOCOLS, header(), body());
+    let response = Res::new(Status::SWITCHING_PROTOCOLS, header(), body());
 
     let result: Result<Res, Res> = Ok(response);
 
@@ -113,7 +112,7 @@ async fn response_test() {
     assert_eq!(converted.status(), &Status::SWITCHING_PROTOCOLS);
     assert!(converted.body().is_none());
 
-    let response = Res::new(method, Status::PROCESSING, header(), body());
+    let response = Res::new(Status::PROCESSING, header(), body());
 
     let result: Result<Res, Res> = Ok(response);
 
@@ -122,7 +121,7 @@ async fn response_test() {
     assert_eq!(converted.status(), &Status::PROCESSING);
     assert!(converted.body().is_none());
 
-    let response = Res::new(method, Status::EARLY_HINTS, header(), body());
+    let response = Res::new(Status::EARLY_HINTS, header(), body());
 
     let result: Result<Res, Res> = Ok(response);
 
@@ -133,7 +132,7 @@ async fn response_test() {
 
     // IntoResponse for Result<T, E> — Err.
 
-    let error = Res::new(method, Status::BAD_REQUEST, header(), body());
+    let error = Res::new(Status::BAD_REQUEST, header(), body());
 
     let result: Result<Res, Res> = Err(error);
 
