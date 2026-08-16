@@ -99,7 +99,7 @@ where
         M: 'a,
         H: 'a;
 
-    fn call<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a> {
+    fn exec<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a> {
         self.middleware.call(state, request, &self.handler)
     }
 }

@@ -11,7 +11,7 @@ where
         Self: 'a,
         S: 'a;
 
-    fn call<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a>;
+    fn exec<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a>;
 }
 
 impl<F, Fut, Req, Res, S> Handler<Req, Res, S> for F
@@ -26,7 +26,7 @@ where
         Self: 'a,
         S: 'a;
 
-    fn call<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a> {
+    fn exec<'a>(&'a self, state: &'a S, request: Req) -> Self::Future<'a> {
         self(state, request)
     }
 }
