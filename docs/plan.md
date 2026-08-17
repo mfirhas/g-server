@@ -11,9 +11,32 @@ gserver! {
 			port: "9999",
 			global_timeout: 5000, // timeout for all handlers under this banner, in ms
 			...
-		},
+		}, // Config for server, optional, default to something.
 
-		app_config: ConfigType, // struct containing all configs from env vars, static, this will be accessible by all.
+		app_config: ConfigType, // struct containing all configs from env vars, static, this will be accessible by all. Optional.
+
+		// group of endpoints shared by same prefix
+		group {
+			prefix: "/prefix",
+			pre: [
+				...
+			], // middlewares applied to all members of this group.
+			post: [
+				...
+			], // middlewares applied to all members of this group.
+			members: [
+				get {
+					...
+				},
+				post {
+					...
+				},
+				... // just like non-group endpoints.
+				group {
+					... // support nested group.
+				},
+			]
+		},
 		
 		// endpoints
 		// we must detect duplicate method and endpoint at compile time.
@@ -75,40 +98,29 @@ gserver! {
 
 ```rust
 // request type:
-struct Request<PathParamsType, QueryParamsType, BodyType> {
-	header: HeaderMap, // depend on implementation, but lets just use axum's HeaderMap for now. 
-	path_params: Option<PathParamsType>,
-	query_params: Option<QueryParamsType>,
-	body: Option<BodyType>,
-	body_str: Option<String>,
+pub struct Request<PathParamsType, QueryParamsType, BodyType> {
+	pub header: HeaderMap, // http crate HeaderMap
+	pub path_params: PathParamsType,
+	pub query_params: QueryParamsType,
+	pub body: BodyType,
 }
 
 // response type:
-struct Response<BodyType> {
-	status: Status, // we use our existing status type.
-	header: HeaderType, // depend on implementation, but lets just use axum's HeaderMap for now. 
-	body: Option<BodyType>,	
-}
-
-// trait for polymorphic response, we support:
-// - (status_code, Header, Body)
-// - (status_code, Header, ()) // no body
-// - (status_code, (), ()) // no header nor body
-// - (status_code, Header, String) // string body
-// - (status_code, (), String) // string body without header
-trait IntoResponse {
-	fn into_response(self) -> Response<BodyType>; 
+pub struct Response<BodyType> {
+	pub status: StatusCode, // use http crate StatusCode.
+	pub header: HeaderMap, // http crate HeaderMap.
+	pub body: Option<BodyType>,	
 }
 
 // application context/state
 #[derive(Clone)]
 struct AppContext<C> {
-	context: C
+	pub context: C
 }
-C: Send + Sync + Clone + 'static' // --> typical dependencies, Arc, static, and alike.
+C: Clone + Send + Sync + 'static' // --> typical dependencies, Arc, static, and alike.
 
 // handler signature
-async handler(cx: AppContext, req: Request<...>) -> impl IntoResponse {
+pub async fn handler(cx: AppContext<ContextType>, req: Request<...>) -> impl Into<Response<BodyType>> {
 	...
-}## Request & Response
+}
 ```
