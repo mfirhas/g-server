@@ -2,28 +2,28 @@
 
 `g-server` provides a generic and uniform interface for building HTTP, SSE, WebSocket, and MCP servers.
 
-```
+```rust
 gserver! {
 	http("app_name") {
 		// server config, ip, ports, and other http server configs.
 		config {
 			ip: "0.0.0.0",
-			port: "9999",
+			port: 9999, // u16
 			global_timeout: 5000, // timeout for all handlers under this banner, in ms
 			...
 		}, // Config for server, optional, default to something.
 
-		app_config: ConfigType, // struct containing all configs from env vars, static, this will be accessible by all. Optional.
+		app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must contains `init()` method.
 
 		// group of endpoints shared by same prefix
 		group {
 			prefix: "/prefix",
 			pre: [
 				...
-			], // middlewares applied to all members of this group.
+			], // pre middlewares applied to all members of this group.
 			post: [
 				...
-			], // middlewares applied to all members of this group.
+			], // post middlewares applied to all members of this group.
 			members: [
 				get {
 					...
@@ -99,27 +99,64 @@ gserver! {
 // request type:
 pub struct Request<PathParamsType, QueryParamsType, BodyType> {
 	pub header: HeaderMap, // http crate HeaderMap
-	pub path_params: PathParamsType,
-	pub query_params: QueryParamsType,
-	pub body: BodyType,
+	pub path_params: PathParamsType, // empty -> ()
+	pub query_params: QueryParamsType, // empty -> ()
+	pub body: BodyType, // empty -> ()
 }
 
 // response type:
 pub struct Response<BodyType> {
-	pub status: StatusCode, // use http crate StatusCode.
+	pub status: StatusCode, // http crate StatusCode.
 	pub header: HeaderMap, // http crate HeaderMap.
-	pub body: BodyType,	// can be Result<T, E>
+	pub body: BodyType, // empty -> ()
 }
 
 // application context/state
 #[derive(Clone)]
-struct AppContext<C> {
-	pub context: C
-}
-C: Clone + Send + Sync + 'static' // --> typical dependencies, Arc, static, and alike.
+pub struct AppContext<C> where C: Clone + Send + Sync + 'static'{
+	pub name: &'static str, // app's name, gotten from server's name: http("app_name")
+	pub context: C, // empty -> ()
+} // --> typical dependencies, Arc, static, and alike, cheap to clone.
 
 // handler signature
-pub async fn handler(cx: AppContext<ContextType>, req: Request<...>) -> impl Into<Response<BodyType>> {
+// P, Q, B are concretely defined.
+pub async fn handler(cx: AppContext<ContextType>, req: Request<P,Q,B>) -> Result<Response<BodyType>, Response<ErrorType>> {
 	...
+}
+
+// pre middleware signature
+// P, Q, B are concretely defined.
+pub async fn pre_middleware(cx: AppContext<ContextType>, req: Request<P,Q,B>) -> Result<Request<P,Q,B> , Response<ErrorType>> {
+	...
+}
+
+// post middleware signature
+// B is concretely defined.
+pub async fn post_middleware(cx: AppContext<ContextType>, res: Response<B>) -> Result<Response<B> , Response<ErrorType>> {
+	...
+}
+```
+
+## axum handler
+AppContext is passed through axum's state.
+
+Route name is `__route_<handler_name>`.
+```rust
+async fn __route_handler_name(...) -> impl IntoResponse {
+	let req: Request<...> = ... // converting axum's request data into `Request<PathParamsType, QueryParamsType, BodyType>`
+
+	let req = pre_middleware1(cx, req).await?;
+	let req = pre_middleware2(cx, req).await?;
+	let req = pre_middleware3(cx, req).await?;
+	// ...
+
+	let res = handler(cx, req).await?;
+
+	let res = post_middleware1(cx, res).await?;
+	let res = post_middleware2(cx, res).await?;
+	let res = post_middleware3(cx, res).await?;
+	// ...
+
+	res.into_response()
 }
 ```
