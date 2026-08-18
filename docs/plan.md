@@ -2,6 +2,8 @@
 
 `g-server` provides a generic and uniform interface for building HTTP, SSE, WebSocket, and MCP servers.
 
+`g-server` will generate the entire entry point for the server, including main().
+
 ```rust
 gserver! {
 	http("app_name") {
