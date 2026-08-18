@@ -12,10 +12,11 @@ gserver! {
 			ip: "0.0.0.0",
 			port: 9999, // u16
 			global_timeout: 5000, // timeout for all handlers under this banner, in ms
+			concurrency_limit: u32, // limit number of concurrent requests
 			...
 		}, // Config for server, optional, default to something.
 
-		app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must contains `init()` method.
+		app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must have `init()` method.
 
 		// group of endpoints shared by same prefix
 		group {

@@ -4,4 +4,4 @@ mod context;
 pub use context::AppContext;
 
 mod http;
-pub use http::{Handler, IntoResponse, Request, Response};
+pub use http::{IntoResponse, Request, Response};
