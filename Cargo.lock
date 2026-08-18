@@ -467,11 +467,13 @@ dependencies = [
  "axum",
  "bytes",
  "criterion",
+ "http",
  "http-body-util",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
 ]
 
 [[package]]
