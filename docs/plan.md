@@ -43,10 +43,9 @@ gserver! {
 		// method: head, get, post, query, etc
 		get { 
 			endpoint: "/the/endpoint", // can be literal or from static, mandatory
-			path_params: PathParamsType, // a struct containing all path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
-			query_params: QueryParamsType, // a struct containing all queries `?q1=a&q2=b`, optional
-			body: BodyType, // a struct containing json body, optional
-			body_str, // if we accept string as body, optional, either body or body_str, cant be both. Optional
+			path_params: PathParamsType, // a struct containing all request path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
+			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional
+			body: BodyType, // a struct containing request body type, optional
 			pre: [
 				middleware1_fn,
 				middleware2_fn,
@@ -109,7 +108,7 @@ pub struct Request<PathParamsType, QueryParamsType, BodyType> {
 pub struct Response<BodyType> {
 	pub status: StatusCode, // use http crate StatusCode.
 	pub header: HeaderMap, // http crate HeaderMap.
-	pub body: Option<BodyType>,	
+	pub body: BodyType,	// can be Result<T, E>
 }
 
 // application context/state
