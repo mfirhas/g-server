@@ -142,7 +142,7 @@ AppContext is passed through axum's state.
 
 Route name is `__route_<handler_name>`.
 ```rust
-async fn __route_handler_name(...) -> impl IntoResponse {
+async fn __route_handler_name(...) -> Result<BodyType, ErrorType> {
 	let req: Request<...> = ... // converting axum's request data into `Request<PathParamsType, QueryParamsType, BodyType>`
 
 	let req = pre_middleware1(cx, req).await?;
@@ -157,6 +157,6 @@ async fn __route_handler_name(...) -> impl IntoResponse {
 	let res = post_middleware3(cx, res).await?;
 	// ...
 
-	res.into_response()
+	Ok(res)
 }
 ```
