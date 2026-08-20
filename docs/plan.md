@@ -90,20 +90,21 @@ gserver! {
 		}
 	},
 
-	http("another_app_in_different_port") {
+	// server name and port must be unique.
+	http("another_app_in_different_port", "0.0.0.0", 42469) {
 		... // same settings like above
 	},
 
-	sse("sse server name") {
-		// TBD
+	sse("sse server name", "0.0.0.0", 42569) {
+		// TODO
 	},
 
-	ws("web socket server name") {
-		// TBD
+	ws("web socket server name", "0.0.0.0", 42669) {
+		// TODO
 	},
 
-	mcp("mcp server name") {
-		// TBD
+	mcp("mcp server name", "0.0.0.0", 42769) {
+		// TODO
 	}
 }
 ```
