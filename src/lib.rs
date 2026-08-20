@@ -6,7 +6,7 @@ mod context;
 pub use context::AppContext;
 
 mod request;
-pub use request::Request;
+pub use request::{Request, multipart};
 
 mod response;
 pub use response::{IntoResponse, Response};
