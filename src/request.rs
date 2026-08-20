@@ -1,4 +1,4 @@
-use http::HeaderMap;
+use crate::http::HeaderMap;
 
 pub struct Request<PathParams = (), QueryParams = (), Body = ()> {
     pub headers: HeaderMap,
