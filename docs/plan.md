@@ -53,7 +53,7 @@ gserver! {
 			},
 			path_params: PathParamsType, // a struct containing all request path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
 			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional.
-			request_body: BodyType, // a struct containing request body type, optional.
+			request_body: BodyType, // for url-encoded form, use Form(Struct), a struct containing request body type, optional.
 			middlewares: [
 				middleware1_fn,
 				middleware2_fn,
@@ -119,28 +119,61 @@ pub struct Response<BodyType> {
 	pub body: BodyType, // empty -> ()
 }
 
-// application context/state
-#[derive(Clone)]
-pub struct AppContext<C> where C: Clone + Send + Sync + 'static'{
-	pub context: C, // empty -> ()
-} // --> typical dependencies, Arc, static, and alike, cheap to clone.
-
 // handler signature
 // P, Q, B are concretely defined.
-pub async fn handler(cx: AppContext<ContextType>, req: Request<P,Q,B>) -> Result<Response<BodyType>, Response<ErrorType>> {
+pub async fn handler(cx: AppContextType, req: Request<P,Q,B>) -> Result<Response<BodyType>, Response<ErrorType>> {
 	...
 }
 
-// pre middleware signature
-// P, Q, B are concretely defined.
-pub async fn pre_middleware(cx: AppContext<ContextType>, req: Request<P,Q,B>) -> Result<Request<P,Q,B> , Response<ErrorType>> {
-	...
+// accumulate all route middlewares and handler
+struct Next<F> {
+    next: F,
 }
 
-// post middleware signature
-// B is concretely defined.
-pub async fn post_middleware(cx: AppContext<ContextType>, res: Response<BodyType>) -> Result<Response<BodyType>, Response<ErrorType>> {
-	...
+impl<F> Next<F> {
+    fn new<Fut, VReq, VRes>(next: F) -> Self
+    where
+        F: FnOnce(AppContext, Request<VReq>) -> Fut,
+        Fut: Future<Output = Response<VRes>>,
+    {
+        Self { next }
+    }
+}
+
+// route executor, contains the Next<F>.
+struct RouteExecutor<F> {
+    func: Next<F>,
+}
+
+impl<F> RouteExecutor<F> {
+    fn new(func: Next<F>) -> Self {
+        RouteExecutor { func }
+    }
+    async fn exec<VREQ, VRES, Fut>(self, cx: AppContext, req: Request<VREQ>) -> Response<VRES>
+    where
+        F: FnOnce(AppContext, Request<VREQ>) -> Fut,
+        Fut: Future<Output = Response<VRES>>,
+    {
+        (self.func.next)(cx, req).await
+    }
+}
+
+async fn middleware<F, Fut, P, Q, B>(
+    cx: AppContextType,
+    req: Request<P, Q, B>,
+    next: Next<F>,
+) -> Response<VRes>
+where
+    F: FnOnce(AppContext, Request<VReq>) -> Fut,
+    Fut: Future<Output = Response<VRes>>,
+{
+		// pre
+
+    let res = (next.next)(cx, req).await;
+
+    // post
+
+    res
 }
 ```
 
@@ -152,8 +185,9 @@ Route name is `__route_<handler_name>`.
 async fn __route_handler_name(...) -> Result<BodyType, ErrorType> {
 	let req: Request<...> = ... // converting axum's request data into `Request<PathParamsType, QueryParamsType, BodyType>`
 
-	// handler_executor contains all middlewares and handler.
-	let res = handler_executor.exec(cx, req).await?;
+	// route_executor contains all middlewares and handler.
+	// all middlewares and handler executed here.
+	let res = route_executor.exec(cx, req).await?;
 
 	Ok(res)
 }
