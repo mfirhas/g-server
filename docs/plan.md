@@ -26,12 +26,9 @@ gserver! {
 			config: {
 				... // config for this group
 			},
-			pre: [
+			middlewares: [
 				...
-			], // pre middlewares applied to all members of this group.
-			post: [
-				...
-			], // post middlewares applied to all members of this group.
+			], // middlewares
 			members: [
 				get {
 					...
@@ -57,16 +54,13 @@ gserver! {
 			path_params: PathParamsType, // a struct containing all request path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
 			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional
 			body: BodyType, // a struct containing request body type, optional
-			pre: [
+			middlewares: [
 				middleware1_fn,
 				middleware2_fn,
 				middleware3_fn,
-			], // middleware before hitting handler
-			post: [
-				middleware1_fn,
-				middleware2_fn,	
-			], // middleware after handler returned
+			], // middlewares
 			handler: FunctionName, // function pointer to handler type we define, and translate to implementation handler, mandatory
+			response_type: Json, // response body type: String(text/plain), Json(application/json), Html(text/html). Optional. Default: json. 
 		},
 
 		post {
@@ -158,17 +152,8 @@ Route name is `__route_<handler_name>`.
 async fn __route_handler_name(...) -> Result<BodyType, ErrorType> {
 	let req: Request<...> = ... // converting axum's request data into `Request<PathParamsType, QueryParamsType, BodyType>`
 
-	let req = pre_middleware1(cx, req).await?;
-	let req = pre_middleware2(cx, req).await?;
-	let req = pre_middleware3(cx, req).await?;
-	// ...
-
-	let res = handler(cx, req).await?;
-
-	let res = post_middleware1(cx, res).await?;
-	let res = post_middleware2(cx, res).await?;
-	let res = post_middleware3(cx, res).await?;
-	// ...
+	// handler_executor contains all middlewares and handler.
+	let res = handler_executor.exec(cx, req).await?;
 
 	Ok(res)
 }
