@@ -52,15 +52,15 @@ gserver! {
 				... // config for this endpoint.
 			},
 			path_params: PathParamsType, // a struct containing all request path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
-			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional
-			body: BodyType, // a struct containing request body type, optional
+			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional.
+			request_body: BodyType, // a struct containing request body type, optional.
 			middlewares: [
 				middleware1_fn,
 				middleware2_fn,
 				middleware3_fn,
 			], // middlewares
 			handler: FunctionName, // function pointer to handler type we define, and translate to implementation handler, mandatory
-			response_type: Json, // response body type: String(text/plain), Json(application/json), Html(text/html). Optional. Default: json. 
+			response_body: Json, // response body type: String(text/plain), Json(application/json), Html(text/html). Optional. Default: json. 
 		},
 
 		post {
