@@ -6,13 +6,15 @@
 
 ```rust
 gserver! {
-	http("app_name") {
-		// server config, ip, ports, and other http server configs.
+	// server declaration, with name, ip and port(u16).
+	http("app_name", "0.0.0.0", 42369) {
+		// server configs, top level one applies to all endpoints inside this server.
 		config {
-			ip: "0.0.0.0",
-			port: 9999, // u16
-			global_timeout: 5000, // timeout for all handlers under this banner, in ms
-			concurrency_limit: u32, // limit number of concurrent requests
+			timeout: 5000, // timeout for all handlers under this banner, in ms, default: 5000 ms
+			concurrency_limit: 100_000, // limits number of concurrent requests, default: 100,000
+			body_limit: 10, // MiB, default: 10 MiB
+			compression: Zstd, // compression method, default: Zstd
+			keep_alive: 1000, // max time an idle connection stays open, in ms, default: 1000 ms
 			...
 		}, // Config for server, optional, default to something.
 
@@ -21,6 +23,9 @@ gserver! {
 		// group of endpoints shared by same prefix
 		group {
 			prefix: "/prefix",
+			config: {
+				... // config for this group
+			},
 			pre: [
 				...
 			], // pre middlewares applied to all members of this group.
@@ -46,6 +51,9 @@ gserver! {
 		// method: head, get, post, query, etc
 		get { 
 			endpoint: "/the/endpoint", // can be literal or from static, mandatory
+			config: {
+				... // config for this endpoint.
+			},
 			path_params: PathParamsType, // a struct containing all request path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
 			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional
 			body: BodyType, // a struct containing request body type, optional
@@ -68,6 +76,8 @@ gserver! {
 		put {
 			...
 		},
+
+		... // other routes
 
 		// latest http verb added
 		query {
@@ -117,7 +127,6 @@ pub struct Response<BodyType> {
 // application context/state
 #[derive(Clone)]
 pub struct AppContext<C> where C: Clone + Send + Sync + 'static'{
-	pub name: &'static str, // app's name, gotten from server's name: http("app_name")
 	pub context: C, // empty -> ()
 } // --> typical dependencies, Arc, static, and alike, cheap to clone.
 
@@ -135,7 +144,7 @@ pub async fn pre_middleware(cx: AppContext<ContextType>, req: Request<P,Q,B>) ->
 
 // post middleware signature
 // B is concretely defined.
-pub async fn post_middleware(cx: AppContext<ContextType>, res: Response<B>) -> Result<Response<B> , Response<ErrorType>> {
+pub async fn post_middleware(cx: AppContext<ContextType>, res: Response<BodyType>) -> Result<Response<BodyType>, Response<ErrorType>> {
 	...
 }
 ```
