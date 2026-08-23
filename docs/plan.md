@@ -15,10 +15,9 @@ gserver! {
 			body_limit: 10, // MiB, default: 10 MiB
 			compression: Zstd, // compression methods: Deflate, Gzip, Brotli, Zstd. Default: Zstd
 			keep_alive: 1000, // max time an idle connection stays open, in ms, default: 1000 ms
+			app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must have `init()` method.
 			...
 		}, // Config for server, optional, default to something.
-
-		app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must have `init()` method.
 
 		// group of endpoints shared by same prefix
 		group {
