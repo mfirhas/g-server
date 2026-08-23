@@ -2,8 +2,8 @@ use crate::{Config, Request, Response};
 
 pub type Handler<C, P, Q, ReqB, Fut> = fn(cx: C, req: Request<P, Q, ReqB>) -> Fut;
 
-pub type Middleware<F, C, P, Q, ReqB, ResB> =
-    fn(cx: C, req: Request<P, Q, ReqB>, ex: Executor<F>) -> Response<ResB>;
+pub type Middleware<F, C, P, Q, ReqB, Fut> =
+    fn(cx: C, req: Request<P, Q, ReqB>, ex: Executor<F>) -> Fut;
 
 /// Http methods supported.
 #[derive(Clone, Copy, PartialEq, Eq)]
