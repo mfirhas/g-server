@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{Config, Request, Response};
 
 pub type Handler<C, P, Q, ReqB, Fut> = fn(cx: C, req: Request<P, Q, ReqB>) -> Fut;
@@ -60,20 +58,16 @@ impl<F> Executor<F> {
 }
 
 /// Route represents 1 endpoint execution.
-pub struct Route<F, P = (), Q = (), B = ()> {
+pub struct Route<F> {
     pub method: HttpMethod,
     pub endpoint: &'static str,
     pub config: Config,
     pub response_body_type: ResponseBodyType,
     pub executor: Executor<F>,
-
-    pub _path_params: PhantomData<P>,
-    pub _query_params: PhantomData<Q>,
-    pub _request_body: PhantomData<B>,
 }
 
-impl<F, P, Q, ReqB> Route<F, P, Q, ReqB> {
-    pub fn new<C, M, ResB, Fut>(
+impl<F> Route<F> {
+    pub fn new<C, P, Q, ReqB, ResB, Fut>(
         method: HttpMethod,
         endpoint: &'static str,
         config: Config,
@@ -81,8 +75,8 @@ impl<F, P, Q, ReqB> Route<F, P, Q, ReqB> {
         executor: Executor<F>,
     ) -> Self
     where
-        C: Clone + Send + Sync + 'static,
         F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
+        C: Clone + Send + Sync + 'static,
         Fut: Future<Output = Response<ResB>> + Send,
     {
         Self {
@@ -91,9 +85,6 @@ impl<F, P, Q, ReqB> Route<F, P, Q, ReqB> {
             config,
             response_body_type,
             executor,
-            _path_params: PhantomData,
-            _query_params: PhantomData,
-            _request_body: PhantomData,
         }
     }
 }
