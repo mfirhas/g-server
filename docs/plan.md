@@ -13,7 +13,7 @@ gserver! {
 			timeout: 5000, // timeout for all handlers under this banner, in ms, default: 5000 ms
 			concurrency_limit: 100_000, // limits number of concurrent requests, default: 100,000
 			body_limit: 10, // MiB, default: 10 MiB
-			compression: Zstd, // compression methods: Deflate, Gzip, Brotli, Zstd. Default: Zstd
+			compression: Zstd, // compression methods: Deflate, Gzip, Brotli, Zstd. Default: All: Zstd, Brotli, Gzip, Deflate.
 			keep_alive: 1000, // max time an idle connection stays open, in ms, default: 1000 ms
 			app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must have `init()` method.
 			...
