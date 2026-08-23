@@ -2,6 +2,9 @@
 
 pub use ::http;
 
+mod config;
+pub use config::{Compression, Config};
+
 mod context;
 pub use context::AppContext;
 
