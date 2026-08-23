@@ -1,8 +1,10 @@
+use std::marker::PhantomData;
+
 use crate::{Config, Request, Response};
 
-pub type Handler<C, P, Q, ReqB, ResB> = fn(cx: C, req: Request<P, Q, ReqB>) -> Response<ResB>;
+pub type Handler<C, P, Q, ReqB, Fut> = fn(cx: C, req: Request<P, Q, ReqB>) -> Fut;
 
-pub type Middleware<C, P, Q, ReqB, ResB, F> =
+pub type Middleware<F, C, P, Q, ReqB, ResB> =
     fn(cx: C, req: Request<P, Q, ReqB>, ex: Executor<F>) -> Response<ResB>;
 
 /// Http methods supported.
@@ -57,13 +59,41 @@ impl<F> Executor<F> {
     }
 }
 
+/// Route represents 1 endpoint execution.
 pub struct Route<F, P = (), Q = (), B = ()> {
     pub method: HttpMethod,
     pub endpoint: &'static str,
     pub config: Config,
-    pub path_params: P,
-    pub query_params: Q,
-    pub request_body: B,
     pub response_body_type: ResponseBodyType,
     pub executor: Executor<F>,
+
+    pub _path_params: PhantomData<P>,
+    pub _query_params: PhantomData<Q>,
+    pub _request_body: PhantomData<B>,
+}
+
+impl<F, P, Q, ReqB> Route<F, P, Q, ReqB> {
+    pub fn new<C, M, ResB, Fut>(
+        method: HttpMethod,
+        endpoint: &'static str,
+        config: Config,
+        response_body_type: ResponseBodyType,
+        executor: Executor<F>,
+    ) -> Self
+    where
+        C: Clone + Send + Sync + 'static,
+        F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
+        Fut: Future<Output = Response<ResB>> + Send,
+    {
+        Self {
+            method,
+            endpoint,
+            config,
+            response_body_type,
+            executor,
+            _path_params: PhantomData,
+            _query_params: PhantomData,
+            _request_body: PhantomData,
+        }
+    }
 }
