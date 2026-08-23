@@ -34,24 +34,24 @@ pub struct Executor<F> {
 }
 
 impl<F> Executor<F> {
-    pub fn new<C, P, Q, ReqB, ResB, Fut>(func: F) -> Self
+    pub fn new<C, P, Q, ReqB, ResB, ErrB, Fut>(func: F) -> Self
     where
         F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
         C: Clone + Send + Sync + 'static,
-        Fut: Future<Output = Response<ResB>> + Send,
+        Fut: Future<Output = Result<Response<ResB>, Response<ErrB>>> + Send,
     {
         Self { func }
     }
 
-    pub async fn exec<C, P, Q, ReqB, ResB, Fut>(
+    pub async fn exec<C, P, Q, ReqB, ResB, ErrB, Fut>(
         self,
         cx: C,
         req: Request<P, Q, ReqB>,
-    ) -> Response<ResB>
+    ) -> Result<Response<ResB>, Response<ErrB>>
     where
         F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
         C: Clone + Send + Sync + 'static,
-        Fut: Future<Output = Response<ResB>> + Send,
+        Fut: Future<Output = Result<Response<ResB>, Response<ErrB>>> + Send,
     {
         (self.func)(cx, req).await
     }
