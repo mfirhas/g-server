@@ -11,4 +11,4 @@ pub use request::{Request, multipart};
 mod response;
 pub use response::{IntoResponse, Response};
 
-mod route;
+pub mod route;
