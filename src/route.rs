@@ -38,7 +38,7 @@ impl<F> Executor<F> {
     where
         F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
         C: Clone + Send + Sync + 'static,
-        Fut: Future<Output = Response<ResB>>,
+        Fut: Future<Output = Response<ResB>> + Send,
     {
         Self { func }
     }
@@ -51,7 +51,7 @@ impl<F> Executor<F> {
     where
         F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
         C: Clone + Send + Sync + 'static,
-        Fut: Future<Output = Response<ResB>>,
+        Fut: Future<Output = Response<ResB>> + Send,
     {
         (self.func)(cx, req).await
     }
