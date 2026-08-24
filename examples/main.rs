@@ -154,7 +154,7 @@ async fn main() {
 
     let router = router.with_state(context);
 
-    let app_a_listener = ::tokio::net::TcpListener::bind(format!("{ip_address}:{port}"))
+    let app_a_listener = ::tokio::net::TcpListener::bind((ip_address, port))
         .await
         .expect("failed creating app_a tcp listener");
 
