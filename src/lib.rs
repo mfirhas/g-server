@@ -13,3 +13,6 @@ pub use response::Response;
 pub use response::{IntoAxumHtmlResponse, IntoAxumJsonResponse, IntoAxumStringResponse};
 
 pub mod route;
+
+mod server;
+pub use server::Server;

@@ -5,6 +5,7 @@ use axum::{
 };
 use g_server::{
     Config, IntoAxumHtmlResponse, IntoAxumJsonResponse, IntoAxumStringResponse, Request, Response,
+    Server,
     route::{Executor, HttpMethod, ResponseBodyType, Route},
 };
 use http::{HeaderMap, StatusCode};
@@ -136,9 +137,27 @@ where
 
 #[tokio::main]
 async fn main() {
-    let server_name = "app_a";
-    let ip_address = "0.0.0.0";
-    let port = 42069_u16;
+    let app_a = __init_app_a();
+
+    let app_a_listener = ::tokio::net::TcpListener::bind((app_a.0.ip_address, app_a.0.port))
+        .await
+        .expect(format!("failed creating {} tcp listener", app_a.0.name).as_str());
+
+    println!(
+        "g-server: running {} on {}:{}...",
+        app_a.0.name, app_a.0.ip_address, app_a.0.port
+    );
+
+    ::tokio::try_join!(::axum::serve(app_a_listener, app_a.1),)
+        .expect("failed running the all servers...");
+}
+
+pub fn __init_app_a() -> (Server, Router<()>) {
+    let server = Server {
+        name: "app_a",
+        ip_address: "0.0.0.0",
+        port: 42069,
+    };
 
     let global_config = Config::default();
     // if user supply any config, we define them here:
@@ -147,32 +166,23 @@ async fn main() {
 
     let context = Context::init(); // Context is from macro, appended with `::init()`
 
-    // list of routes
-    let router = init_app_a(global_config.clone());
-    let router = __route_handler_1(router, global_config.clone());
-    let router = __route_handler_2(router, global_config.clone());
+    let router = Router::new();
 
-    let router = router.with_state(context);
-
-    let app_a_listener = ::tokio::net::TcpListener::bind((ip_address, port))
-        .await
-        .expect("failed creating app_a tcp listener");
-
-    ::tokio::try_join!(::axum::serve(app_a_listener, router),)
-        .expect("failed running the server...");
-}
-
-pub fn init_app_a(global_config: Config) -> Router<Context> {
-    let mut router = Router::new();
-
+    // middlewares
     // if let Some(timeout) = global_config.timeout {
     //     router = router.layer(TimeoutLayer::new(Duration::from_millis(timeout.into())));
     // }
 
-    router
+    // we register all routes here
+    let router = __route_app_a_handler_1(router, global_config.clone());
+    let router = __route_app_a_handler_2(router, global_config.clone());
+
+    let router = router.with_state(context);
+
+    (server, router)
 }
 
-pub fn __route_handler_1(
+pub fn __route_app_a_handler_1(
     router: axum::Router<Context>,
     global_config: Config,
 ) -> axum::Router<Context> {
@@ -231,7 +241,7 @@ pub fn __route_handler_1(
     router
 }
 
-pub fn __route_handler_2(
+pub fn __route_app_a_handler_2(
     router: axum::Router<Context>,
     global_config: Config,
 ) -> axum::Router<Context> {
