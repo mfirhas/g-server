@@ -1,63 +1,98 @@
 use crate::http::{HeaderMap, StatusCode};
 
+#[derive(Debug, Clone)]
 pub struct Response<Body = ()> {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Body,
 }
 
-pub trait IntoResponse {
-    type Body;
-
-    fn into_response(self) -> Response<Self::Body>;
+pub trait IntoAxumStringResponse {
+    fn into_string_response(self) -> axum::response::Response;
 }
 
-impl<B> IntoResponse for (StatusCode, HeaderMap, B) {
-    type Body = B;
+pub trait IntoAxumJsonResponse {
+    fn into_json_response(self) -> axum::response::Response;
+}
 
-    fn into_response(self) -> Response<Self::Body> {
-        let (status, headers, body) = self;
+pub trait IntoAxumHtmlResponse {
+    fn into_html_response(self) -> axum::response::Response;
+}
 
-        Response {
-            status,
-            headers,
-            body,
+use ::axum::response::IntoResponse;
+
+impl IntoAxumStringResponse for Result<Response<String>, Response<String>> {
+    fn into_string_response(self) -> axum::response::Response {
+        match self {
+            Ok(resp) => {
+                let mut response = resp.body.into_response();
+
+                *response.status_mut() = resp.status;
+                response.headers_mut().extend(resp.headers);
+
+                response
+            }
+
+            Err(resp) => {
+                let mut response = resp.body.into_response();
+
+                *response.status_mut() = resp.status;
+                response.headers_mut().extend(resp.headers);
+
+                response
+            }
         }
     }
 }
 
-impl IntoResponse for (StatusCode, (), ()) {
-    type Body = ();
+impl<ResB, ErrB> IntoAxumJsonResponse for Result<Response<ResB>, Response<ErrB>>
+where
+    ResB: ::serde::Serialize,
+    ErrB: ::serde::Serialize,
+{
+    fn into_json_response(self) -> axum::response::Response {
+        match self {
+            Ok(resp) => {
+                let mut response = axum::Json(resp.body).into_response();
 
-    fn into_response(self) -> Response<Self::Body> {
-        let (status, _, _) = self;
+                *response.status_mut() = resp.status;
+                response.headers_mut().extend(resp.headers);
 
-        Response {
-            status,
-            headers: HeaderMap::new(),
-            body: (),
+                response
+            }
+
+            Err(resp) => {
+                let mut response = axum::Json(resp.body).into_response();
+
+                *response.status_mut() = resp.status;
+                response.headers_mut().extend(resp.headers);
+
+                response
+            }
         }
     }
 }
 
-impl IntoResponse for (StatusCode, (), String) {
-    type Body = String;
+impl IntoAxumHtmlResponse for Result<Response<String>, Response<String>> {
+    fn into_html_response(self) -> axum::response::Response {
+        match self {
+            Ok(resp) => {
+                let mut response = axum::response::Html(resp.body).into_response();
 
-    fn into_response(self) -> Response<Self::Body> {
-        let (status, _, body) = self;
+                *response.status_mut() = resp.status;
+                response.headers_mut().extend(resp.headers);
 
-        Response {
-            status,
-            headers: HeaderMap::new(),
-            body,
+                response
+            }
+
+            Err(resp) => {
+                let mut response = axum::response::Html(resp.body).into_response();
+
+                *response.status_mut() = resp.status;
+                response.headers_mut().extend(resp.headers);
+
+                response
+            }
         }
-    }
-}
-
-impl<B> IntoResponse for Response<B> {
-    type Body = B;
-
-    fn into_response(self) -> Response<Self::Body> {
-        self
     }
 }

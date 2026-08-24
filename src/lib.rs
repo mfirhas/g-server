@@ -9,6 +9,7 @@ mod request;
 pub use request::{Request, multipart};
 
 mod response;
-pub use response::{IntoResponse, Response};
+pub use response::Response;
+pub use response::{IntoAxumHtmlResponse, IntoAxumJsonResponse, IntoAxumStringResponse};
 
 pub mod route;

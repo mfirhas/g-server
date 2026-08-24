@@ -1,5 +1,6 @@
 use crate::http::HeaderMap;
 
+#[derive(Debug, Clone)]
 pub struct Request<PathParams = (), QueryParams = (), Body = ()> {
     pub headers: HeaderMap,
     pub path_params: PathParams,
