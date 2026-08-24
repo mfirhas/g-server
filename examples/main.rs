@@ -1,16 +1,4 @@
-use axum::{
-    Json, Router,
-    extract::{Path, Query, State},
-    routing::get,
-};
-use g_server::{
-    Config, IntoAxumHtmlResponse, IntoAxumJsonResponse, IntoAxumStringResponse, Request, Response,
-    Server,
-    route::{Executor, HttpMethod, ResponseBodyType, Route},
-};
-use http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
-use tokio::time::Duration;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PathParams {
@@ -70,11 +58,11 @@ pub struct ErrorResponse {
 
 pub async fn handler_1(
     cx: Context,
-    req: Request<PathParams, QueryParams, RequestBody>,
-) -> Result<Response<ResponseBody>, Response<ErrorResponse>> {
-    Ok(Response {
-        status: StatusCode::OK,
-        headers: HeaderMap::new(),
+    req: g_server::Request<PathParams, QueryParams, RequestBody>,
+) -> Result<g_server::Response<ResponseBody>, g_server::Response<ErrorResponse>> {
+    Ok(g_server::Response {
+        status: g_server::http::StatusCode::OK,
+        headers: g_server::http::HeaderMap::new(),
         body: ResponseBody {
             user_id: req.path_params.user_id,
             user_name: req.query_params.user_name,
@@ -86,11 +74,11 @@ pub async fn handler_1(
 
 pub async fn handler_2(
     cx: Context,
-    req: Request<(), (), RequestBody_2>,
-) -> Result<Response<ResponseBody_2>, Response<ErrorResponse>> {
-    Ok(Response {
-        status: StatusCode::OK,
-        headers: HeaderMap::new(),
+    req: g_server::Request<(), (), RequestBody_2>,
+) -> Result<g_server::Response<ResponseBody_2>, g_server::Response<ErrorResponse>> {
+    Ok(g_server::Response {
+        status: g_server::http::StatusCode::OK,
+        headers: g_server::http::HeaderMap::new(),
         body: ResponseBody_2 {
             action: req.body.action,
             token: req.body.token,
@@ -101,12 +89,13 @@ pub async fn handler_2(
 
 pub async fn auth<P, Q, ReqB, ResB, F, Fut>(
     cx: Context,
-    req: Request<P, Q, ReqB>,
-    next: Executor<F>,
-) -> Result<Response<ResB>, Response<ErrorResponse>>
+    req: g_server::Request<P, Q, ReqB>,
+    next: g_server::route::Executor<F>,
+) -> Result<g_server::Response<ResB>, g_server::Response<ErrorResponse>>
 where
-    F: FnOnce(Context, Request<P, Q, ReqB>) -> Fut,
-    Fut: Future<Output = Result<Response<ResB>, Response<ErrorResponse>>> + Send,
+    F: FnOnce(Context, g_server::Request<P, Q, ReqB>) -> Fut,
+    Fut:
+        Future<Output = Result<g_server::Response<ResB>, g_server::Response<ErrorResponse>>> + Send,
 {
     println!("before auth...");
 
@@ -119,12 +108,13 @@ where
 
 pub async fn logger<P, Q, ReqB, ResB, F, Fut>(
     cx: Context,
-    req: Request<P, Q, ReqB>,
-    next: Executor<F>,
-) -> Result<Response<ResB>, Response<ErrorResponse>>
+    req: g_server::Request<P, Q, ReqB>,
+    next: g_server::route::Executor<F>,
+) -> Result<g_server::Response<ResB>, g_server::Response<ErrorResponse>>
 where
-    F: FnOnce(Context, Request<P, Q, ReqB>) -> Fut,
-    Fut: Future<Output = Result<Response<ResB>, Response<ErrorResponse>>> + Send,
+    F: FnOnce(Context, g_server::Request<P, Q, ReqB>) -> Fut,
+    Fut:
+        Future<Output = Result<g_server::Response<ResB>, g_server::Response<ErrorResponse>>> + Send,
 {
     println!("before log...");
 
@@ -134,6 +124,11 @@ where
 
     Ok(resp)
 }
+
+// below this is macro generated for axum implementation
+// -----------------------------------------------------
+
+use g_server::{IntoAxumHtmlResponse, IntoAxumJsonResponse, IntoAxumStringResponse};
 
 #[tokio::main]
 async fn main() {
@@ -152,21 +147,21 @@ async fn main() {
         .expect("failed running the all servers...");
 }
 
-pub fn __init_app_a() -> (Server, Router<()>) {
-    let server = Server {
+pub fn __init_app_a() -> (g_server::Server, axum::Router<()>) {
+    let server = g_server::Server {
         name: "app_a",
         ip_address: "0.0.0.0",
         port: 42069,
     };
 
-    let global_config = Config::default();
+    let global_config = g_server::Config::default();
     // if user supply any config, we define them here:
     // global_config.timeout = Some(X); // X = user defined timeout from macro
     // ...
 
     let context = Context::init(); // Context is from macro, appended with `::init()`
 
-    let router = Router::new();
+    let router = axum::Router::new();
 
     // middlewares
     // if let Some(timeout) = global_config.timeout {
@@ -184,35 +179,35 @@ pub fn __init_app_a() -> (Server, Router<()>) {
 
 pub fn __route_app_a_handler_1(
     router: axum::Router<Context>,
-    global_config: Config,
+    global_config: g_server::Config,
 ) -> axum::Router<Context> {
     let config = global_config;
     // if user supply any config, we define them here:
     // global_config.timeout = // user defined timeout from macro
     // ...
-    let executor = Executor::new(handler_1);
+    let executor = g_server::route::Executor::new(handler_1);
     // We assemble middlewares from last to first: first in array execute first, so we declare last here to make it executed first.
     // We assemble these middlewares directly from macro declaration.
     // If no middlewares, straight to route.
-    let executor = Executor::new(move |cx, req| logger(cx, req, executor));
-    let executor = Executor::new(move |cx, req| auth(cx, req, executor));
-    let route = Route::<_> {
-        method: HttpMethod::Post,
+    let executor = g_server::route::Executor::new(move |cx, req| logger(cx, req, executor));
+    let executor = g_server::route::Executor::new(move |cx, req| auth(cx, req, executor));
+    let route = g_server::route::Route::<_> {
+        method: g_server::route::HttpMethod::Post,
         endpoint: "/route_1/{user_id}/{user_email}",
         config,
-        response_body_type: ResponseBodyType::Json,
+        response_body_type: g_server::route::ResponseBodyType::Json,
         executor: executor,
     };
 
     #[rustfmt::skip]
     let route_handler = move |
-          State(cx): State<Context>,
+          axum::extract::State(cx): axum::extract::State<Context>,
           headers: axum::http::HeaderMap,
-          Path(path_params): Path<PathParams>,
-          Query(query_params): Query<QueryParams>,
-          Json(body): Json<RequestBody>,
+          axum::extract::Path(path_params): axum::extract::Path<PathParams>,
+          axum::extract::Query(query_params): axum::extract::Query<QueryParams>,
+          axum::extract::Json(body): axum::extract::Json<RequestBody>,
     | async move {
-        let req = Request {
+        let req = g_server::Request {
             headers,
             path_params,
             query_params,
@@ -223,19 +218,33 @@ pub fn __route_app_a_handler_1(
     };
 
     let router = match route.method {
-        HttpMethod::Get => router.route(route.endpoint, axum::routing::get(route_handler)),
+        g_server::route::HttpMethod::Get => {
+            router.route(route.endpoint, axum::routing::get(route_handler))
+        }
 
-        HttpMethod::Post => router.route(route.endpoint, axum::routing::post(route_handler)),
+        g_server::route::HttpMethod::Post => {
+            router.route(route.endpoint, axum::routing::post(route_handler))
+        }
 
-        HttpMethod::Put => router.route(route.endpoint, axum::routing::put(route_handler)),
+        g_server::route::HttpMethod::Put => {
+            router.route(route.endpoint, axum::routing::put(route_handler))
+        }
 
-        HttpMethod::Patch => router.route(route.endpoint, axum::routing::patch(route_handler)),
+        g_server::route::HttpMethod::Patch => {
+            router.route(route.endpoint, axum::routing::patch(route_handler))
+        }
 
-        HttpMethod::Head => router.route(route.endpoint, axum::routing::head(route_handler)),
+        g_server::route::HttpMethod::Head => {
+            router.route(route.endpoint, axum::routing::head(route_handler))
+        }
 
-        HttpMethod::Query => router.route(route.endpoint, axum::routing::get(route_handler)),
+        g_server::route::HttpMethod::Query => {
+            router.route(route.endpoint, axum::routing::get(route_handler))
+        }
 
-        HttpMethod::Any => router.route(route.endpoint, axum::routing::any(route_handler)),
+        g_server::route::HttpMethod::Any => {
+            router.route(route.endpoint, axum::routing::any(route_handler))
+        }
     };
 
     router
@@ -243,32 +252,32 @@ pub fn __route_app_a_handler_1(
 
 pub fn __route_app_a_handler_2(
     router: axum::Router<Context>,
-    global_config: Config,
+    global_config: g_server::Config,
 ) -> axum::Router<Context> {
     let config = global_config;
-    let executor = Executor::new(handler_2);
+    let executor = g_server::route::Executor::new(handler_2);
     // We assemble middlewares from last to first: first in array execute first, so we declare last here to make it executed first.
     // We assemble these middlewares directly from macro declaration.
     // If no middlewares, straight to route.
-    let executor = Executor::new(move |cx, req| logger(cx, req, executor));
-    let executor = Executor::new(move |cx, req| auth(cx, req, executor));
-    let route = Route::<_> {
-        method: HttpMethod::Post,
+    let executor = g_server::route::Executor::new(move |cx, req| logger(cx, req, executor));
+    let executor = g_server::route::Executor::new(move |cx, req| auth(cx, req, executor));
+    let route = g_server::route::Route::<_> {
+        method: g_server::route::HttpMethod::Post,
         endpoint: "/route_2",
         config,
-        response_body_type: ResponseBodyType::Json,
+        response_body_type: g_server::route::ResponseBodyType::Json,
         executor: executor,
     };
 
     #[rustfmt::skip]
     let route_handler = move |
-          State(cx): State<Context>,
+          axum::extract::State(cx): axum::extract::State<Context>,
           headers: axum::http::HeaderMap,
-          Path(path_params): Path<()>,
-          Query(query_params): Query<()>,
-          Json(body): Json<RequestBody_2>,
+          axum::extract::Path(path_params): axum::extract::Path<()>,
+          axum::extract::Query(query_params): axum::extract::Query<()>,
+          axum::extract::Json(body): axum::extract::Json<RequestBody_2>,
     | async move {
-        let req = Request {
+        let req = g_server::Request {
             headers,
             path_params,
             query_params,
@@ -279,19 +288,33 @@ pub fn __route_app_a_handler_2(
     };
 
     let router = match route.method {
-        HttpMethod::Get => router.route(route.endpoint, axum::routing::get(route_handler)),
+        g_server::route::HttpMethod::Get => {
+            router.route(route.endpoint, axum::routing::get(route_handler))
+        }
 
-        HttpMethod::Post => router.route(route.endpoint, axum::routing::post(route_handler)),
+        g_server::route::HttpMethod::Post => {
+            router.route(route.endpoint, axum::routing::post(route_handler))
+        }
 
-        HttpMethod::Put => router.route(route.endpoint, axum::routing::put(route_handler)),
+        g_server::route::HttpMethod::Put => {
+            router.route(route.endpoint, axum::routing::put(route_handler))
+        }
 
-        HttpMethod::Patch => router.route(route.endpoint, axum::routing::patch(route_handler)),
+        g_server::route::HttpMethod::Patch => {
+            router.route(route.endpoint, axum::routing::patch(route_handler))
+        }
 
-        HttpMethod::Head => router.route(route.endpoint, axum::routing::head(route_handler)),
+        g_server::route::HttpMethod::Head => {
+            router.route(route.endpoint, axum::routing::head(route_handler))
+        }
 
-        HttpMethod::Query => router.route(route.endpoint, axum::routing::get(route_handler)),
+        g_server::route::HttpMethod::Query => {
+            router.route(route.endpoint, axum::routing::get(route_handler))
+        }
 
-        HttpMethod::Any => router.route(route.endpoint, axum::routing::any(route_handler)),
+        g_server::route::HttpMethod::Any => {
+            router.route(route.endpoint, axum::routing::any(route_handler))
+        }
     };
 
     router
