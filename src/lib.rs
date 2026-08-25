@@ -835,7 +835,7 @@ fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
         },
 
         None => quote! {
-            body: ::axum::body::Body,
+            body: (),
         },
     }
 }
