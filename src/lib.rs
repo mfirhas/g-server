@@ -687,12 +687,6 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
         quote! { () }
     };
 
-    let body_ty = match &route.request_body {
-        Some(RequestBody::Json(ty)) => quote!(#ty),
-        Some(RequestBody::Form(ty)) => quote!(#ty),
-        None => quote!(()),
-    };
-
     let body_extractor = generate_body_extractor(&route.request_body);
 
     let middleware_chain = generate_middleware_chain(route, handler);
