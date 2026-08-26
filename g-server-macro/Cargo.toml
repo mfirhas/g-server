@@ -1,0 +1,42 @@
+[package]
+name = "g-server-macro"
+version = "0.0.0"
+edition = "2024"
+authors = ["Muhammad Fathir Irhas <fathir.irhas@gmail.com>"]
+description = "..."
+license = "MIT"
+repository = "https://github.com/mfirhas/g-server"
+documentation = "https://docs.rs/g-server"
+keywords = ["http", "sse", "websocket", "mcp", "server"]
+categories = ["rust-patterns"]
+rust-version = "1.86.0"
+exclude = [
+  "**/*_test.rs",
+  "tests/**",
+  "benches/**",
+  "examples/**",
+  ".github/**",
+  ".gitignore",
+  "Makefile",
+  "AUDIT.md",
+  "AGENTS.md",
+]
+
+[lib]
+proc-macro = true
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "extra-traits"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
+tower = "0.5"
+tower-http = "0.7"
+reqwest = "0.13.4"

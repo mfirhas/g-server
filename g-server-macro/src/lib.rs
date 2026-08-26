@@ -725,7 +725,6 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
                     executor,
                 };
 
-            #[::rustfmt::skip]
             let route_handler = move |
                 ::axum::extract::State(cx):
                     ::axum::extract::State<#context>,
