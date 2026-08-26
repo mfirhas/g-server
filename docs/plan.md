@@ -7,8 +7,11 @@
 ```rust
 gserver! {
 	// server declaration, with name, ip and port(u16).
+	// OPTIONAL: Any kind of servers are optional. If none declared, eprintln!("g-server: no servers registered");
 	http("app_name", "0.0.0.0", 42369) {
 		// server configs, top level one applies to all endpoints inside this server.
+		// OPTIONAL: config is optional and fields are also optional. 
+		// The way config initializes is first it calls `::default`, and then set these fields.
 		config {
 			timeout: 5000, // timeout for all handlers under this banner, in ms, default: 5000 ms
 			concurrency_limit: 100_000, // limits number of concurrent requests, default: 100,000
@@ -18,17 +21,22 @@ gserver! {
 			...
 		}, // Config for server, optional, default to something.
 
+		// OPTIONAL: if omitted, context is ().
 		app_context: ContextType, // struct containing all app's context, such as configs and dependencies. Accessible to all endpoints. Must have `init()` method.
 
 		// group of endpoints shared by same prefix
 		group {
+			// MANDATORY: will be prepended on every members path
 			prefix: "/prefix",
+			// OPTIONAL: these config will overrides global config.
 			config: {
 				... // config for this group
 			},
+			// OPTIONAL
 			middlewares: [
 				...
 			], // middlewares
+			// MANDATORY: a group must have at least 1 member
 			members: [
 				get {
 					...
@@ -37,6 +45,7 @@ gserver! {
 					...
 				},
 				... // just like non-group endpoints.
+				// same rules applies
 				group {
 					... // support nested group.
 				},
@@ -47,19 +56,31 @@ gserver! {
 		// we must detect duplicate method and endpoint at compile time.
 		// method: head, get, post, query, etc
 		get { 
+			// MANDATORY: define this route path.
 			endpoint: "/the/endpoint", // can be literal or from static, mandatory
+			// OPTIONAL: these config will overrides global config.
 			config: {
 				... // config for this endpoint.
 			},
+			// OPTIONAL: If omitted, it becomes (): Path<()>
 			path_params: PathParamsType, // a struct containing all request path params, compile time construct from endpoint, /endpoint/:id/:code/:name -> Struct {id: i32, code: String, name: String } -> might failed at construction 
+			// OPTIONAL: If omitted, it becomes (): Query<()>
 			query_params: QueryParamsType, // a struct containing all request queries `?q1=a&q2=b`, optional.
+			// OPTIONAL: If omitted, the body is ().
+			// Comes in 3 kinds:
+			// - String -> body is string
+			// - Json(StructType) -> body is json: Json<StructType>
+			// - Form(StructType) -> accepting x-www-form-urlencoded: Form<StructType>
 			request_body: BodyType, // for url-encoded form, use Form(Struct), a struct containing request body type, optional.
+			// OPTIONAL
 			middlewares: [
 				middleware1_fn,
 				middleware2_fn,
 				middleware3_fn,
 			], // middlewares
+			// MANDATORY: each route must have handler
 			handler: FunctionName, // function pointer to handler type we define, and translate to implementation handler, mandatory
+			// OPTIONAL: if omitted, default to Json.
 			response_body: Json, // response body type: String(text/plain), Json(application/json), Html(text/html). Optional. Default: json. 
 		},
 
