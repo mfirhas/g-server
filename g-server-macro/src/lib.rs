@@ -45,7 +45,11 @@ enum ServerKind {
 
 struct ServerBody {
     config: Vec<ConfigEntry>,
+
+    // OPTIONAL:
+    // If omitted, context is ().
     context: Option<Type>,
+
     routes: Vec<Route>,
 }
 
@@ -56,19 +60,52 @@ struct ConfigEntry {
 
 struct Route {
     method: HttpMethod,
-    endpoint: LitStr,
+
+    // MANDATORY.
+    //
+    // Kept as an expression so this can eventually support:
+    //
+    // endpoint: "/foo",
+    // endpoint: SOME_STATIC,
+    //
+    // instead of only a string literal.
+    endpoint: Expr,
+
+    // OPTIONAL.
     config: Vec<ConfigEntry>,
+
+    // OPTIONAL.
+    // If omitted => Path<()>.
     path_params: Option<Type>,
+
+    // OPTIONAL.
+    // If omitted => Query<()>.
     query_params: Option<Type>,
+
+    // OPTIONAL.
+    // If omitted => body ().
     request_body: Option<RequestBody>,
+
+    // OPTIONAL.
     middlewares: Vec<Path>,
+
+    // MANDATORY.
     handler: Path,
+
+    // OPTIONAL.
+    // Defaults to Json.
     response_body: ResponseBody,
 }
 
 enum RequestBody {
+    // Json(StructType)
     Json(Type),
+
+    // Form(StructType)
     Form(Type),
+
+    // String
+    String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -108,6 +145,7 @@ impl Parse for GServer {
                 "sse" => ServerKind::Sse,
                 "ws" => ServerKind::Ws,
                 "mcp" => ServerKind::Mcp,
+
                 _ => {
                     return Err(syn::Error::new(
                         kind_ident.span(),
@@ -120,9 +158,13 @@ impl Parse for GServer {
             syn::parenthesized!(content in input);
 
             let name: LitStr = content.parse()?;
+
             content.parse::<Token![,]>()?;
+
             let ip: LitStr = content.parse()?;
+
             content.parse::<Token![,]>()?;
+
             let port: LitInt = content.parse()?;
 
             if !content.is_empty() {
@@ -134,11 +176,7 @@ impl Parse for GServer {
 
             let body = parse_server_body(&body)?;
 
-            if input.peek(Token![,]) {
-                input.parse::<Token![,]>()?;
-            } else if !input.is_empty() {
-                return Err(input.error("expected `,` between server declarations"));
-            }
+            consume_comma(input)?;
 
             servers.push(Server {
                 kind,
@@ -153,6 +191,10 @@ impl Parse for GServer {
     }
 }
 
+// ============================================================
+// Server body
+// ============================================================
+
 fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
     let mut config = Vec::new();
     let mut context = None;
@@ -162,17 +204,26 @@ fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
         let key: Ident = input.parse()?;
 
         match key.to_string().as_str() {
+            // OPTIONAL.
             "config" => {
                 let content;
+
                 braced!(content in input);
+
                 config = parse_config(&content)?;
             }
 
+            // OPTIONAL.
+            //
+            // If omitted, generated context is ().
             "app_context" => {
                 input.parse::<Token![:]>()?;
+
                 context = Some(input.parse()?);
             }
 
+            // GROUPS are part of the DSL plan but are intentionally
+            // not implemented in this route-first implementation yet.
             "group" => {
                 return Err(syn::Error::new(
                     key.span(),
@@ -180,16 +231,46 @@ fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
                 ));
             }
 
-            "get" => routes.push(parse_route(input, HttpMethod::Get)?),
-            "post" => routes.push(parse_route(input, HttpMethod::Post)?),
-            "put" => routes.push(parse_route(input, HttpMethod::Put)?),
-            "patch" => routes.push(parse_route(input, HttpMethod::Patch)?),
-            "delete" => routes.push(parse_route(input, HttpMethod::Delete)?),
-            "options" => routes.push(parse_route(input, HttpMethod::Options)?),
-            "head" => routes.push(parse_route(input, HttpMethod::Head)?),
-            "trace" => routes.push(parse_route(input, HttpMethod::Trace)?),
-            "query" => routes.push(parse_route(input, HttpMethod::Query)?),
-            "any" => routes.push(parse_route(input, HttpMethod::Any)?),
+            // Routes.
+            "get" => {
+                routes.push(parse_route(input, HttpMethod::Get)?);
+            }
+
+            "post" => {
+                routes.push(parse_route(input, HttpMethod::Post)?);
+            }
+
+            "put" => {
+                routes.push(parse_route(input, HttpMethod::Put)?);
+            }
+
+            "patch" => {
+                routes.push(parse_route(input, HttpMethod::Patch)?);
+            }
+
+            "delete" => {
+                routes.push(parse_route(input, HttpMethod::Delete)?);
+            }
+
+            "options" => {
+                routes.push(parse_route(input, HttpMethod::Options)?);
+            }
+
+            "head" => {
+                routes.push(parse_route(input, HttpMethod::Head)?);
+            }
+
+            "trace" => {
+                routes.push(parse_route(input, HttpMethod::Trace)?);
+            }
+
+            "query" => {
+                routes.push(parse_route(input, HttpMethod::Query)?);
+            }
+
+            "any" => {
+                routes.push(parse_route(input, HttpMethod::Any)?);
+            }
 
             _ => {
                 return Err(syn::Error::new(key.span(), "unexpected server member"));
@@ -206,69 +287,107 @@ fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
     })
 }
 
+// ============================================================
+// Route
+// ============================================================
+
 fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
     let content;
+
     braced!(content in input);
 
+    // OPTIONAL fields start with their defaults.
     let mut endpoint = None;
     let mut config = Vec::new();
     let mut path_params = None;
     let mut query_params = None;
     let mut request_body = None;
     let mut middlewares = Vec::new();
+
+    // MANDATORY, therefore remains None until parsed.
     let mut handler = None;
+
+    // OPTIONAL, defaults to Json.
     let mut response_body = ResponseBody::Json;
 
     while !content.is_empty() {
         let key: Ident = content.parse()?;
 
         match key.to_string().as_str() {
+            // MANDATORY.
             "endpoint" => {
                 content.parse::<Token![:]>()?;
+
                 endpoint = Some(content.parse()?);
             }
 
+            // OPTIONAL.
             "config" => {
                 content.parse::<Token![:]>()?;
 
                 let body;
+
                 braced!(body in content);
 
                 config = parse_config(&body)?;
             }
 
+            // OPTIONAL.
+            //
+            // Omitted => Path<()>.
             "path_params" => {
                 content.parse::<Token![:]>()?;
+
                 path_params = Some(content.parse()?);
             }
 
+            // OPTIONAL.
+            //
+            // Omitted => Query<()>.
             "query_params" => {
                 content.parse::<Token![:]>()?;
+
                 query_params = Some(content.parse()?);
             }
 
+            // OPTIONAL.
+            //
+            // Supported:
+            //
+            // request_body: String
+            // request_body: Json(MyStruct)
+            // request_body: Form(MyStruct)
             "request_body" => {
                 content.parse::<Token![:]>()?;
+
                 request_body = Some(parse_request_body(&content)?);
             }
 
+            // OPTIONAL.
             "middlewares" => {
                 content.parse::<Token![:]>()?;
 
                 let body;
+
                 syn::bracketed!(body in content);
 
                 while !body.is_empty() {
                     middlewares.push(body.parse()?);
+
                     consume_comma(&body)?;
                 }
             }
 
+            // MANDATORY.
             "handler" => {
                 content.parse::<Token![:]>()?;
+
                 handler = Some(content.parse()?);
             }
 
+            // OPTIONAL.
+            //
+            // Default = Json.
             "response_body" => {
                 content.parse::<Token![:]>()?;
 
@@ -276,8 +395,11 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
 
                 response_body = match ident.to_string().as_str() {
                     "Json" => ResponseBody::Json,
+
                     "String" | "Text" => ResponseBody::String,
+
                     "Html" => ResponseBody::Html,
+
                     _ => {
                         return Err(syn::Error::new(
                             ident.span(),
@@ -295,11 +417,23 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
         consume_comma(&content)?;
     }
 
-    let endpoint =
-        endpoint.ok_or_else(|| syn::Error::new(Span::call_site(), "route requires `endpoint`"))?;
+    // --------------------------------------------------------
+    // Mandatory validation
+    // --------------------------------------------------------
 
-    let handler =
-        handler.ok_or_else(|| syn::Error::new(Span::call_site(), "route requires `handler`"))?;
+    let endpoint = endpoint.ok_or_else(|| {
+        syn::Error::new(
+            Span::call_site(),
+            "route requires mandatory field `endpoint`",
+        )
+    })?;
+
+    let handler = handler.ok_or_else(|| {
+        syn::Error::new(
+            Span::call_site(),
+            "route requires mandatory field `handler`",
+        )
+    })?;
 
     Ok(Route {
         method,
@@ -314,29 +448,51 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
     })
 }
 
+// ============================================================
+// Request body
+// ============================================================
+
 fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> {
     let kind: Ident = input.parse()?;
 
-    let body;
-    syn::parenthesized!(body in input);
-
-    let ty: Type = body.parse()?;
-
     match kind.to_string().as_str() {
-        "Json" => Ok(RequestBody::Json(ty)),
-        "Form" => Ok(RequestBody::Form(ty)),
+        "String" => Ok(RequestBody::String),
+
+        "Json" => {
+            let body;
+            syn::parenthesized!(body in input);
+
+            let ty: Type = body.parse()?;
+
+            Ok(RequestBody::Json(ty))
+        }
+
+        "Form" => {
+            let body;
+            syn::parenthesized!(body in input);
+
+            let ty: Type = body.parse()?;
+
+            Ok(RequestBody::Form(ty))
+        }
+
         _ => Err(syn::Error::new(
             kind.span(),
-            "expected `Json(Type)` or `Form(Type)`",
+            "expected `String`, `Json(Type)`, or `Form(Type)`",
         )),
     }
 }
+
+// ============================================================
+// Config
+// ============================================================
 
 fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
     let mut entries = Vec::new();
 
     while !input.is_empty() {
         let name: Ident = input.parse()?;
+
         input.parse::<Token![:]>()?;
 
         let value: Expr = input.parse()?;
@@ -364,18 +520,22 @@ fn consume_comma(input: ParseStream<'_>) -> Result<()> {
 fn expand(input: GServer) -> Result<TokenStream2> {
     validate_servers(&input.servers)?;
 
+    // --------------------------------------------------------
+    // Servers are OPTIONAL.
+    //
+    // Zero servers is valid.
+    // --------------------------------------------------------
+
     let http_servers = input
         .servers
         .iter()
         .filter(|server| matches!(server.kind, ServerKind::Http))
         .collect::<Vec<_>>();
 
-    if http_servers.is_empty() {
-        return Err(syn::Error::new(
-            Span::call_site(),
-            "at least one `http` server is required",
-        ));
-    }
+    // --------------------------------------------------------
+    // SSE / WS / MCP are recognized by the parser, but not
+    // implemented yet.
+    // --------------------------------------------------------
 
     for server in &input.servers {
         match server.kind {
@@ -384,21 +544,21 @@ fn expand(input: GServer) -> Result<TokenStream2> {
             ServerKind::Sse => {
                 return Err(syn::Error::new(
                     server.name.span(),
-                    "`sse` is reserved but not implemented yet",
+                    "`sse` server is not implemented yet",
                 ));
             }
 
             ServerKind::Ws => {
                 return Err(syn::Error::new(
                     server.name.span(),
-                    "`ws` is reserved but not implemented yet",
+                    "`ws` server is not implemented yet",
                 ));
             }
 
             ServerKind::Mcp => {
                 return Err(syn::Error::new(
                     server.name.span(),
-                    "`mcp` is reserved but not implemented yet",
+                    "`mcp` server is not implemented yet",
                 ));
             }
         }
@@ -420,6 +580,8 @@ fn expand(input: GServer) -> Result<TokenStream2> {
     }
 
     Ok(quote! {
+        // These traits are needed by generated response
+        // conversion calls.
         use g_server::{
             IntoAxumHtmlResponse,
             IntoAxumJsonResponse,
@@ -443,6 +605,10 @@ fn validate_servers(servers: &[Server]) -> Result<()> {
     let mut ports = HashSet::new();
 
     for server in servers {
+        // ----------------------------------------------------
+        // Server name must be unique.
+        // ----------------------------------------------------
+
         let name = server.name.value();
 
         if !names.insert(name.clone()) {
@@ -452,6 +618,10 @@ fn validate_servers(servers: &[Server]) -> Result<()> {
             ));
         }
 
+        // ----------------------------------------------------
+        // Port must be unique.
+        // ----------------------------------------------------
+
         let port: u16 = server.port.base10_parse()?;
 
         if !ports.insert(port) {
@@ -460,6 +630,10 @@ fn validate_servers(servers: &[Server]) -> Result<()> {
                 format!("duplicate server port `{port}`"),
             ));
         }
+
+        // ----------------------------------------------------
+        // HTTP-specific validation.
+        // ----------------------------------------------------
 
         if matches!(server.kind, ServerKind::Http) {
             validate_routes(server)?;
@@ -473,37 +647,27 @@ fn validate_routes(server: &Server) -> Result<()> {
     let mut routes = HashSet::new();
 
     for route in &server.body.routes {
-        let endpoint = route.endpoint.value();
-        let key = (route.method, endpoint.clone());
+        if let Expr::Lit(expr) = &route.endpoint {
+            if let syn::Lit::Str(endpoint) = &expr.lit {
+                let endpoint_value = endpoint.value();
 
-        if !routes.insert(key) {
-            return Err(syn::Error::new(
-                route.endpoint.span(),
-                format!(
-                    "duplicate route: {} {}",
-                    method_name(route.method),
-                    endpoint
-                ),
-            ));
+                let key = (route.method, endpoint_value.clone());
+
+                if !routes.insert(key) {
+                    return Err(syn::Error::new(
+                        endpoint.span(),
+                        format!(
+                            "duplicate route: {} {}",
+                            method_name(route.method),
+                            endpoint_value,
+                        ),
+                    ));
+                }
+            }
         }
     }
 
     Ok(())
-}
-
-fn method_name(method: HttpMethod) -> &'static str {
-    match method {
-        HttpMethod::Get => "GET",
-        HttpMethod::Post => "POST",
-        HttpMethod::Put => "PUT",
-        HttpMethod::Patch => "PATCH",
-        HttpMethod::Delete => "DELETE",
-        HttpMethod::Options => "OPTIONS",
-        HttpMethod::Head => "HEAD",
-        HttpMethod::Trace => "TRACE",
-        HttpMethod::Query => "QUERY",
-        HttpMethod::Any => "ANY",
-    }
 }
 
 // ============================================================
@@ -511,8 +675,26 @@ fn method_name(method: HttpMethod) -> &'static str {
 // ============================================================
 
 fn generate_main(servers: &[&Server]) -> TokenStream2 {
+    // --------------------------------------------------------
+    // OPTIONAL: zero servers.
+    //
+    // The generated binary is still valid.
+    // --------------------------------------------------------
+
+    if servers.is_empty() {
+        return quote! {
+            #[::tokio::main]
+            async fn main() {
+                eprintln!(
+                    "g-server: no servers registered"
+                );
+            }
+        };
+    }
+
     let initializers = servers.iter().map(|server| {
         let name = server_ident(server);
+
         let init = init_ident(server);
 
         quote! {
@@ -522,12 +704,16 @@ fn generate_main(servers: &[&Server]) -> TokenStream2 {
 
     let listeners = servers.iter().map(|server| {
         let name = server_ident(server);
+
         let listener = format_ident!("{}_listener", name);
 
         quote! {
             let #listener =
                 ::tokio::net::TcpListener::bind(
-                    (#name.0.ip_address, #name.0.port)
+                    (
+                        #name.0.ip_address,
+                        #name.0.port
+                    )
                 )
                 .await
                 .expect(
@@ -549,10 +735,14 @@ fn generate_main(servers: &[&Server]) -> TokenStream2 {
 
     let serves = servers.iter().map(|server| {
         let name = server_ident(server);
+
         let listener = format_ident!("{}_listener", name);
 
         quote! {
-            ::axum::serve(#listener, #name.1)
+            ::axum::serve(
+                #listener,
+                #name.1,
+            )
         }
     });
 
@@ -566,7 +756,9 @@ fn generate_main(servers: &[&Server]) -> TokenStream2 {
             ::tokio::try_join!(
                 #(#serves),*
             )
-            .expect("failed running all servers...");
+            .expect(
+                "failed running all servers..."
+            );
         }
     }
 }
@@ -579,15 +771,35 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
     let init = init_ident(server);
 
     let name = server.name.value();
+
     let ip = server.ip.value();
+
     let port: u16 = server.port.base10_parse()?;
 
-    let context = server.body.context.as_ref().ok_or_else(|| {
-        syn::Error::new(
-            server.name.span(),
-            "HTTP server requires `app_context: Type`",
-        )
-    })?;
+    // OPTIONAL context:
+    //
+    // app_context: Context
+    //     => Context::init()
+    //
+    // omitted
+    //     => ()
+    let context_type = server
+        .body
+        .context
+        .as_ref()
+        .map(|ty| quote!(#ty))
+        .unwrap_or_else(|| quote!(()));
+
+    let context_init = match server.body.context.as_ref() {
+        Some(ty) => quote! {
+            let context =
+                <#ty>::init();
+        },
+
+        None => quote! {
+            let context = ();
+        },
+    };
 
     let global_config = generate_global_config(&server.body.config);
 
@@ -608,21 +820,26 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
             g_server::Server,
             ::axum::Router<()>,
         ) {
-            let server = g_server::Server {
-                name: #name,
-                ip_address: #ip,
-                port: #port,
-            };
+            let server =
+                g_server::Server {
+                    name: #name,
+                    ip_address: #ip,
+                    port: #port,
+                };
 
+            // Always start from Config::default().
+            let mut global_config =
+                g_server::Config::default();
+
+            // Override only fields explicitly supplied
+            // by the user.
             #global_config
 
-            let context =
-                <#context>::init();
+            // OPTIONAL context.
+            #context_init
 
             let router =
-                ::axum::Router::new();
-
-            let mut router = router;
+                ::axum::Router::<#context_type>::new();
 
             #(#route_calls)*
 
@@ -637,6 +854,7 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
 fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
     let assignments = entries.iter().map(|entry| {
         let field = &entry.name;
+
         let value = &entry.value;
 
         quote! {
@@ -646,9 +864,6 @@ fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
     });
 
     quote! {
-        let mut global_config =
-            g_server::Config::default();
-
         #(#assignments)*
     }
 }
@@ -660,33 +875,28 @@ fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
 fn generate_route_function(server: &Server, route: &Route, index: usize) -> Result<TokenStream2> {
     let function = route_function_ident(server, index);
 
-    let context = server.body.context.as_ref().ok_or_else(|| {
-        syn::Error::new(
-            server.name.span(),
-            "HTTP server requires `app_context: Type`",
-        )
-    })?;
+    // OPTIONAL context.
+    let context = server.body.context.as_ref();
+
+    let context_ty = context.map(|ty| quote!(#ty)).unwrap_or_else(|| quote!(()));
 
     let handler = &route.handler;
 
+    // OPTIONAL => Path<()>
     let path_ty = route
         .path_params
         .as_ref()
         .map(|ty| quote!(#ty))
         .unwrap_or_else(|| quote!(()));
 
+    // OPTIONAL => Query<()>
     let query_ty = route
         .query_params
         .as_ref()
         .map(|ty| quote!(#ty))
-        .unwrap_or_else(|| quote!());
+        .unwrap_or_else(|| quote!(()));
 
-    let query_ty = if route.query_params.is_some() {
-        quote!(#query_ty)
-    } else {
-        quote! { () }
-    };
-
+    // OPTIONAL request body.
     let body_extractor = generate_body_extractor(&route.request_body);
 
     let middleware_chain = generate_middleware_chain(route, handler);
@@ -697,22 +907,31 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
 
     let response_body_type = response_body_ident(route.response_body);
 
-    let endpoint = route.endpoint.value();
+    let endpoint = &route.endpoint;
 
+    // Route config starts from inherited global
+    // config and overrides only explicitly declared
+    // fields.
     let route_config = generate_route_config(&route.config);
 
     let registration = generate_route_registration(route.method);
 
     Ok(quote! {
         pub fn #function(
-            router: ::axum::Router<#context>,
-            global_config: g_server::Config,
-        ) -> ::axum::Router<#context> {
+            router:
+                ::axum::Router<#context_ty>,
+
+            global_config:
+                g_server::Config,
+        ) -> ::axum::Router<#context_ty> {
+            // Inherit global configuration first.
             let mut config =
                 global_config;
 
+            // Then override route-specific fields.
             #route_config
 
+            // Handler + optional middleware chain.
             #middleware_chain
 
             let route =
@@ -721,16 +940,16 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
                     endpoint: #endpoint,
                     config,
                     response_body_type:
-                        g_server::route::ResponseBodyType::#response_body_type,
+                        g_server::route::ResponseBodyType::
+                            #response_body_type,
                     executor,
                 };
 
             let route_handler = move |
                 ::axum::extract::State(cx):
-                    ::axum::extract::State<#context>,
+                    ::axum::extract::State<#context_ty>,
 
-                headers:
-                    ::axum::http::HeaderMap,
+                headers: ::axum::http::HeaderMap,
 
                 ::axum::extract::Path(path_params):
                     ::axum::extract::Path<#path_ty>,
@@ -740,18 +959,12 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
 
                 #body_extractor
             | async move {
-                let headers =
-                    g_server::http::HeaderMap::from(
-                        headers
-                    );
-
-                let req =
-                    g_server::Request {
-                        headers,
-                        path_params,
-                        query_params,
-                        body,
-                    };
+                let req = g_server::Request {
+                    headers,
+                    path_params,
+                    query_params,
+                    body,
+                };
 
                 route
                     .executor
@@ -770,6 +983,22 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
 // ============================================================
 
 fn generate_middleware_chain(route: &Route, handler: &Path) -> TokenStream2 {
+    // No middleware:
+    //
+    // Executor::new(handler)
+    //
+    // Middleware:
+    //
+    // handler
+    //   ↓
+    // middleware3
+    //   ↓
+    // middleware2
+    //   ↓
+    // middleware1
+    //
+    // Therefore declarations are wrapped in reverse order.
+
     let mut output = quote! {
         let executor =
             g_server::route::Executor::new(
@@ -777,8 +1006,6 @@ fn generate_middleware_chain(route: &Route, handler: &Path) -> TokenStream2 {
             );
     };
 
-    // Reverse because the first declared middleware
-    // must execute first.
     for middleware in route.middlewares.iter().rev() {
         output.extend(quote! {
             let executor =
@@ -804,6 +1031,7 @@ fn generate_middleware_chain(route: &Route, handler: &Path) -> TokenStream2 {
 fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
     let assignments = entries.iter().map(|entry| {
         let field = &entry.name;
+
         let value = &entry.value;
 
         quote! {
@@ -818,24 +1046,48 @@ fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
 }
 
 // ============================================================
-// Axum request body
+// Request body
 // ============================================================
 
 fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
     match body {
-        Some(RequestBody::Json(ty)) => quote! {
-            ::axum::extract::Json(body):
-                ::axum::extract::Json<#ty>,
-        },
+        // JSON body:
+        //
+        // request_body: Json(MyStruct)
+        Some(RequestBody::Json(ty)) => {
+            quote! {
+                ::axum::extract::Json(body):
+                    ::axum::extract::Json<#ty>,
+            }
+        }
 
-        Some(RequestBody::Form(ty)) => quote! {
-            ::axum::extract::Form(body):
-                ::axum::extract::Form<#ty>,
-        },
+        // Form body:
+        //
+        // request_body: Form(MyStruct)
+        Some(RequestBody::Form(ty)) => {
+            quote! {
+                ::axum::extract::Form(body):
+                    ::axum::extract::Form<#ty>,
+            }
+        }
 
-        None => quote! {
-            body: (),
-        },
+        // String body:
+        //
+        // request_body: String
+        Some(RequestBody::String) => {
+            quote! {
+                body: String,
+            }
+        }
+
+        // No request_body:
+        //
+        // body is simply ().
+        None => {
+            quote! {
+                body: (),
+            }
+        }
     }
 }
 
@@ -845,27 +1097,39 @@ fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
 
 fn generate_response_conversion(body: ResponseBody) -> TokenStream2 {
     match body {
-        ResponseBody::Json => quote! {
-            .into_json_response()
-        },
+        ResponseBody::Json => {
+            quote! {
+                .into_json_response()
+            }
+        }
 
-        ResponseBody::String => quote! {
-            .into_string_response()
-        },
+        ResponseBody::String => {
+            quote! {
+                .into_string_response()
+            }
+        }
 
-        ResponseBody::Html => quote! {
-            .into_html_response()
-        },
+        ResponseBody::Html => {
+            quote! {
+                .into_html_response()
+            }
+        }
     }
 }
 
 fn response_body_ident(body: ResponseBody) -> Ident {
     match body {
-        ResponseBody::Json => format_ident!("Json"),
+        ResponseBody::Json => {
+            format_ident!("Json")
+        }
 
-        ResponseBody::String => format_ident!("String"),
+        ResponseBody::String => {
+            format_ident!("String")
+        }
 
-        ResponseBody::Html => format_ident!("Html"),
+        ResponseBody::Html => {
+            format_ident!("Html")
+        }
     }
 }
 
@@ -875,97 +1139,117 @@ fn response_body_ident(body: ResponseBody) -> Ident {
 
 fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
     match method {
-        HttpMethod::Get => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::get(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Get => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::get(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Post => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::post(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Post => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::post(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Put => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::put(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Put => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::put(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Patch => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::patch(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Patch => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::patch(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Delete => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::delete(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Delete => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::delete(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Options => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::options(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Options => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::options(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Head => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::head(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Head => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::head(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Trace => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::trace(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Trace => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::trace(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
         // Current DSL semantics:
         // `query` is represented by GET at the Axum layer.
-        HttpMethod::Query => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::get(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Query => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::get(
+                        route_handler
+                    ),
+                )
+            }
+        }
 
-        HttpMethod::Any => quote! {
-            router.route(
-                route.endpoint,
-                ::axum::routing::any(
-                    route_handler
-                ),
-            )
-        },
+        HttpMethod::Any => {
+            quote! {
+                router.route(
+                    route.endpoint,
+                    ::axum::routing::any(
+                        route_handler
+                    ),
+                )
+            }
+        }
     }
 }
 
@@ -975,25 +1259,45 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
 
 fn method_tokens(method: HttpMethod) -> TokenStream2 {
     let ident = match method {
-        HttpMethod::Get => format_ident!("Get"),
+        HttpMethod::Get => {
+            format_ident!("Get")
+        }
 
-        HttpMethod::Post => format_ident!("Post"),
+        HttpMethod::Post => {
+            format_ident!("Post")
+        }
 
-        HttpMethod::Put => format_ident!("Put"),
+        HttpMethod::Put => {
+            format_ident!("Put")
+        }
 
-        HttpMethod::Patch => format_ident!("Patch"),
+        HttpMethod::Patch => {
+            format_ident!("Patch")
+        }
 
-        HttpMethod::Delete => format_ident!("Delete"),
+        HttpMethod::Delete => {
+            format_ident!("Delete")
+        }
 
-        HttpMethod::Options => format_ident!("Options"),
+        HttpMethod::Options => {
+            format_ident!("Options")
+        }
 
-        HttpMethod::Head => format_ident!("Head"),
+        HttpMethod::Head => {
+            format_ident!("Head")
+        }
 
-        HttpMethod::Trace => format_ident!("Trace"),
+        HttpMethod::Trace => {
+            format_ident!("Trace")
+        }
 
-        HttpMethod::Query => format_ident!("Query"),
+        HttpMethod::Query => {
+            format_ident!("Query")
+        }
 
-        HttpMethod::Any => format_ident!("Any"),
+        HttpMethod::Any => {
+            format_ident!("Any")
+        }
     };
 
     quote! {
@@ -1006,6 +1310,16 @@ fn method_tokens(method: HttpMethod) -> TokenStream2 {
 // ============================================================
 
 fn server_ident(server: &Server) -> Ident {
+    // NOTE:
+    //
+    // This currently assumes the server name can be used as
+    // a Rust identifier:
+    //
+    // http("app_a", ...)
+    //
+    // Later we should decouple the user-facing server name
+    // from generated Rust identifiers so names like
+    // "my-api" are also valid.
     Ident::new(&server.name.value(), server.name.span())
 }
 
@@ -1023,4 +1337,23 @@ fn route_function_ident(server: &Server, index: usize) -> Ident {
         .unwrap_or_else(|| format!("route_{index}"));
 
     format_ident!("__route_{}_{}", server.name.value(), handler_name)
+}
+
+// ============================================================
+// Method name for diagnostics
+// ============================================================
+
+fn method_name(method: HttpMethod) -> &'static str {
+    match method {
+        HttpMethod::Get => "GET",
+        HttpMethod::Post => "POST",
+        HttpMethod::Put => "PUT",
+        HttpMethod::Patch => "PATCH",
+        HttpMethod::Delete => "DELETE",
+        HttpMethod::Options => "OPTIONS",
+        HttpMethod::Head => "HEAD",
+        HttpMethod::Trace => "TRACE",
+        HttpMethod::Query => "QUERY",
+        HttpMethod::Any => "ANY",
+    }
 }
