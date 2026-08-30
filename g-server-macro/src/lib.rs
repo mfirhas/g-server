@@ -24,42 +24,42 @@ pub fn gserver(input: TokenStream) -> TokenStream {
 // AST
 // ============================================================
 
-struct GServer {
-    servers: Vec<Server>,
+pub(crate) struct GServer {
+    pub(crate) servers: Vec<Server>,
 }
 
-struct Server {
-    kind: ServerKind,
-    name: LitStr,
-    ip: LitStr,
-    port: LitInt,
-    body: ServerBody,
+pub(crate) struct Server {
+    pub(crate) kind: ServerKind,
+    pub(crate) name: LitStr,
+    pub(crate) ip: LitStr,
+    pub(crate) port: LitInt,
+    pub(crate) body: ServerBody,
 }
 
-enum ServerKind {
+pub(crate) enum ServerKind {
     Http,
     Sse,
     Ws,
     Mcp,
 }
 
-struct ServerBody {
-    config: Vec<ConfigEntry>,
+pub(crate) struct ServerBody {
+    pub(crate) config: Vec<ConfigEntry>,
 
     // OPTIONAL:
     // If omitted, context is ().
-    context: Option<Type>,
+    pub(crate) context: Option<Type>,
 
-    routes: Vec<Route>,
+    pub(crate) routes: Vec<Route>,
 }
 
-struct ConfigEntry {
-    name: Ident,
-    value: Expr,
+pub(crate) struct ConfigEntry {
+    pub(crate) name: Ident,
+    pub(crate) value: Expr,
 }
 
-struct Route {
-    method: HttpMethod,
+pub(crate) struct Route {
+    pub(crate) method: HttpMethod,
 
     // MANDATORY.
     //
@@ -69,35 +69,35 @@ struct Route {
     // endpoint: SOME_STATIC,
     //
     // instead of only a string literal.
-    endpoint: Expr,
+    pub(crate) endpoint: Expr,
 
     // OPTIONAL.
-    config: Vec<ConfigEntry>,
+    pub(crate) config: Vec<ConfigEntry>,
 
     // OPTIONAL.
     // If omitted => Path<()>.
-    path_params: Option<Type>,
+    pub(crate) path_params: Option<Type>,
 
     // OPTIONAL.
     // If omitted => Query<()>.
-    query_params: Option<Type>,
+    pub(crate) query_params: Option<Type>,
 
     // OPTIONAL.
     // If omitted => body ().
-    request_body: Option<RequestBody>,
+    pub(crate) request_body: Option<RequestBody>,
 
     // OPTIONAL.
-    middlewares: Vec<Path>,
+    pub(crate) middlewares: Vec<Path>,
 
     // MANDATORY.
-    handler: Path,
+    pub(crate) handler: Path,
 
     // OPTIONAL.
     // Defaults to Json.
-    response_body: ResponseBody,
+    pub(crate) response_body: ResponseBody,
 }
 
-enum RequestBody {
+pub(crate) enum RequestBody {
     // Json(StructType)
     Json(Type),
 
@@ -109,7 +109,7 @@ enum RequestBody {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum HttpMethod {
+pub(crate) enum HttpMethod {
     Get,
     Post,
     Put,
@@ -123,7 +123,7 @@ enum HttpMethod {
 }
 
 #[derive(Clone, Copy)]
-enum ResponseBody {
+pub(crate) enum ResponseBody {
     Json,
     String,
     Html,
@@ -131,6 +131,13 @@ enum ResponseBody {
 
 // ============================================================
 // Parsing
+//
+// Parse `gserver!` body:
+// ```rust,ignore
+// gserver! {
+//     <body> // parse this
+// }
+// ```
 // ============================================================
 
 impl Parse for GServer {
