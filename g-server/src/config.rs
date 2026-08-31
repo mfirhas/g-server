@@ -13,6 +13,14 @@ pub struct Config {
     pub keep_alive: Option<u32>,
 }
 
+impl Config {
+    pub fn empty() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {

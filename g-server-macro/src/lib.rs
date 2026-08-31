@@ -10,6 +10,8 @@ use syn::{
     parse_macro_input,
 };
 
+mod config;
+
 #[proc_macro]
 pub fn gserver(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as GServer);
@@ -44,18 +46,13 @@ pub(crate) enum ServerKind {
 }
 
 pub(crate) struct ServerBody {
-    pub(crate) config: Vec<ConfigEntry>,
+    pub(crate) config: Vec<crate::config::ConfigEntry>,
 
     // OPTIONAL:
     // If omitted, context is ().
     pub(crate) context: Option<Type>,
 
     pub(crate) routes: Vec<Route>,
-}
-
-pub(crate) struct ConfigEntry {
-    pub(crate) name: Ident,
-    pub(crate) value: Expr,
 }
 
 pub(crate) struct Route {
@@ -72,7 +69,7 @@ pub(crate) struct Route {
     pub(crate) endpoint: Expr,
 
     // OPTIONAL.
-    pub(crate) config: Vec<ConfigEntry>,
+    pub(crate) config: Vec<crate::config::ConfigEntry>,
 
     // OPTIONAL.
     // If omitted => Path<()>.
@@ -217,7 +214,7 @@ fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
 
                 braced!(content in input);
 
-                config = parse_config(&content)?;
+                config = crate::config::parse_config(&content)?;
             }
 
             // OPTIONAL.
@@ -336,7 +333,7 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
 
                 braced!(body in content);
 
-                config = parse_config(&body)?;
+                config = crate::config::parse_config(&body)?;
             }
 
             // OPTIONAL.
@@ -490,29 +487,7 @@ fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> {
     }
 }
 
-// ============================================================
-// Config
-// ============================================================
-
-fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
-    let mut entries = Vec::new();
-
-    while !input.is_empty() {
-        let name: Ident = input.parse()?;
-
-        input.parse::<Token![:]>()?;
-
-        let value: Expr = input.parse()?;
-
-        entries.push(ConfigEntry { name, value });
-
-        consume_comma(input)?;
-    }
-
-    Ok(entries)
-}
-
-fn consume_comma(input: ParseStream<'_>) -> Result<()> {
+pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
     if input.peek(Token![,]) {
         input.parse::<Token![,]>()?;
     }
@@ -808,7 +783,7 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
         },
     };
 
-    let global_config = generate_global_config(&server.body.config);
+    let global_config = crate::config::generate_global_config(&server.body.config);
 
     let route_calls = server.body.routes.iter().enumerate().map(|(index, _)| {
         let route = route_function_ident(server, index);
@@ -834,10 +809,6 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
                     port: #port,
                 };
 
-            // Always start from Config::default().
-            let mut global_config =
-                g_server::Config::default();
-
             // Override only fields explicitly supplied
             // by the user.
             #global_config
@@ -856,23 +827,6 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
             (server, router)
         }
     })
-}
-
-fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
-    let assignments = entries.iter().map(|entry| {
-        let field = &entry.name;
-
-        let value = &entry.value;
-
-        quote! {
-            global_config.#field =
-                (#value).into();
-        }
-    });
-
-    quote! {
-        #(#assignments)*
-    }
 }
 
 // ============================================================
@@ -919,7 +873,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
     // Route config starts from inherited global
     // config and overrides only explicitly declared
     // fields.
-    let route_config = generate_route_config(&route.config);
+    let route_config = crate::config::generate_route_config(&route.config);
 
     let registration = generate_route_registration(route.method);
 
@@ -931,10 +885,6 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
             global_config:
                 g_server::Config,
         ) -> ::axum::Router<#context_ty> {
-            // Inherit global configuration first.
-            let mut config =
-                global_config;
-
             // Then override route-specific fields.
             #route_config
 
@@ -1029,27 +979,6 @@ fn generate_middleware_chain(route: &Route, handler: &Path) -> TokenStream2 {
     }
 
     output
-}
-
-// ============================================================
-// Route config
-// ============================================================
-
-fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
-    let assignments = entries.iter().map(|entry| {
-        let field = &entry.name;
-
-        let value = &entry.value;
-
-        quote! {
-            config.#field =
-                (#value).into();
-        }
-    });
-
-    quote! {
-        #(#assignments)*
-    }
 }
 
 // ============================================================
