@@ -31,7 +31,8 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
 
         let value: Expr = input.parse()?;
 
-        let config = ConfigEntry::parse(name, value)?;
+        let config = ConfigEntry::parse(name.clone(), value)
+            .map_err(|err| syn::Error::new(name.span(), err.to_string()))?;
 
         entries.push(config);
 
@@ -135,7 +136,8 @@ impl ConfigEntry {
 
     fn validate_compression(value: &mut Expr) -> Result<()> {
         let value_str = value.to_token_stream().to_string();
-        let c = Compression::from_str(value_str.as_str())?;
+        let c = Compression::from_str(value_str.as_str())
+            .map_err(|err| syn::Error::new(Span::call_site(), err))?;
         let c_ident = syn::Ident::new(c.to_string().as_str(), Span::call_site());
         *value = syn::parse2(quote! { g_server::Compression::#c_ident })?;
 
@@ -174,7 +176,7 @@ impl Display for Compression {
 }
 
 impl FromStr for Compression {
-    type Err = syn::Error;
+    type Err = String;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
@@ -183,12 +185,10 @@ impl FromStr for Compression {
             "Brotli" | "brotli" => Ok(Self::Brotli),
             "Zstd" | "zstd" => Ok(Self::Zstd),
             "All" | "all" => Ok(Self::All),
-            other => Err(syn::Error::new(
-                other.span(),
-                format!(
-                    "invalid/unsupported compression method, supported: {}",
-                    Self::display_list()
-                ),
+            other => Err(format!(
+                "`{}` is invalid/unsupported compression method, supported: {}",
+                other,
+                Self::display_list()
             )),
         }
     }
