@@ -1,5 +1,16 @@
 use std::{fmt::Display, str::FromStr};
 
+use proc_macro2::{Ident, Span};
+use syn::Result;
+use syn::parse::ParseStream;
+
+pub(crate) fn parse_response_body(input: ParseStream<'_>) -> Result<ResponseBody> {
+    let ident: Ident = input.parse()?;
+
+    crate::response_body::ResponseBody::from_str(ident.to_string().as_str())
+        .map_err(|err| syn::Error::new(Span::call_site(), err))
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) enum ResponseBody {
     #[default]

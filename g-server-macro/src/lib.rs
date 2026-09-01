@@ -3,7 +3,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use std::{collections::HashSet, str::FromStr};
+use std::collections::HashSet;
 use syn::{
     Expr, LitInt, LitStr, Path, Result, Token, Type, braced,
     parse::{Parse, ParseStream},
@@ -389,11 +389,8 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
             "response_body" => {
                 content.parse::<Token![:]>()?;
 
-                let ident: Ident = content.parse()?;
-
-                response_body =
-                    crate::response_body::ResponseBody::from_str(ident.to_string().as_str())
-                        .map_err(|err| syn::Error::new(key.span(), err))?;
+                response_body = crate::response_body::parse_response_body(&content)
+                    .map_err(|err| syn::Error::new(key.span(), err.to_string()))?;
             }
 
             _ => {
