@@ -3,7 +3,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use std::collections::HashSet;
+use std::{collections::HashSet, str::FromStr};
 use syn::{
     Expr, LitInt, LitStr, Path, Result, Token, Type, braced,
     parse::{Parse, ParseStream},
@@ -11,6 +11,7 @@ use syn::{
 };
 
 mod config;
+mod response_body;
 
 #[proc_macro]
 pub fn gserver(input: TokenStream) -> TokenStream {
@@ -91,7 +92,7 @@ pub(crate) struct Route {
 
     // OPTIONAL.
     // Defaults to Json.
-    pub(crate) response_body: ResponseBody,
+    pub(crate) response_body: crate::response_body::ResponseBody,
 }
 
 pub(crate) enum RequestBody {
@@ -117,13 +118,6 @@ pub(crate) enum HttpMethod {
     Trace,
     Query,
     Any,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum ResponseBody {
-    Json,
-    String,
-    Html,
 }
 
 // ============================================================
@@ -312,7 +306,7 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
     let mut handler = None;
 
     // OPTIONAL, defaults to Json.
-    let mut response_body = ResponseBody::Json;
+    let mut response_body = crate::response_body::ResponseBody::default();
 
     while !content.is_empty() {
         let key: Ident = content.parse()?;
@@ -397,20 +391,9 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
 
                 let ident: Ident = content.parse()?;
 
-                response_body = match ident.to_string().as_str() {
-                    "Json" => ResponseBody::Json,
-
-                    "String" | "Text" => ResponseBody::String,
-
-                    "Html" => ResponseBody::Html,
-
-                    _ => {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            "expected `Json`, `String`, or `Html`",
-                        ));
-                    }
-                };
+                response_body =
+                    crate::response_body::ResponseBody::from_str(ident.to_string().as_str())
+                        .map_err(|err| syn::Error::new(key.span(), err))?;
             }
 
             _ => {
@@ -866,7 +849,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
 
     let method = method_tokens(route.method);
 
-    let response_body_type = response_body_ident(route.response_body);
+    let response_body_type = format_ident!("{}", route.response_body.to_string());
 
     let endpoint = &route.endpoint;
 
@@ -879,11 +862,8 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
 
     Ok(quote! {
         pub fn #function(
-            router:
-                ::axum::Router<#context_ty>,
-
-            global_config:
-                g_server::Config,
+            router: ::axum::Router<#context_ty>,
+            global_config: g_server::Config,
         ) -> ::axum::Router<#context_ty> {
             // Then override route-specific fields.
             #route_config
@@ -896,9 +876,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
                     method: #method,
                     endpoint: #endpoint,
                     config,
-                    response_body_type:
-                        g_server::route::ResponseBodyType::
-                            #response_body_type,
+                    response_body_type: g_server::route::ResponseBodyType::#response_body_type,
                     executor,
                 };
 
@@ -1031,40 +1009,24 @@ fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
 // Response conversion
 // ============================================================
 
-fn generate_response_conversion(body: ResponseBody) -> TokenStream2 {
+fn generate_response_conversion(body: crate::response_body::ResponseBody) -> TokenStream2 {
     match body {
-        ResponseBody::Json => {
+        crate::response_body::ResponseBody::Json => {
             quote! {
                 .into_json_response()
             }
         }
 
-        ResponseBody::String => {
+        crate::response_body::ResponseBody::String => {
             quote! {
                 .into_string_response()
             }
         }
 
-        ResponseBody::Html => {
+        crate::response_body::ResponseBody::Html => {
             quote! {
                 .into_html_response()
             }
-        }
-    }
-}
-
-fn response_body_ident(body: ResponseBody) -> Ident {
-    match body {
-        ResponseBody::Json => {
-            format_ident!("Json")
-        }
-
-        ResponseBody::String => {
-            format_ident!("String")
-        }
-
-        ResponseBody::Html => {
-            format_ident!("Html")
         }
     }
 }
