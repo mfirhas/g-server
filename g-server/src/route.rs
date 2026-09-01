@@ -65,26 +65,3 @@ pub struct Route<F> {
     pub response_body_type: ResponseBodyType,
     pub executor: Executor<F>,
 }
-
-impl<F> Route<F> {
-    pub fn new<C, P, Q, ReqB, ResB, Fut>(
-        method: HttpMethod,
-        endpoint: &'static str,
-        config: Config,
-        response_body_type: ResponseBodyType,
-        executor: Executor<F>,
-    ) -> Self
-    where
-        F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
-        C: Clone + Send + Sync + 'static,
-        Fut: Future<Output = Response<ResB>> + Send,
-    {
-        Self {
-            method,
-            endpoint,
-            config,
-            response_body_type,
-            executor,
-        }
-    }
-}
