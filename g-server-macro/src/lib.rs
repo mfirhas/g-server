@@ -542,14 +542,6 @@ fn expand(input: GServer) -> Result<TokenStream2> {
     }
 
     Ok(quote! {
-        // These traits are needed by generated response
-        // conversion calls.
-        use g_server::{
-            IntoAxumHtmlResponse,
-            IntoAxumJsonResponse,
-            IntoAxumStringResponse,
-        };
-
         #main
 
         #(#initializers)*
@@ -842,7 +834,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
 
     let middleware_chain = generate_middleware_chain(route, handler);
 
-    let response_conversion = generate_response_conversion(route.response_body);
+    let route_response = generate_route_response(route.response_body);
 
     let method = method_tokens(route.method);
 
@@ -898,11 +890,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
                     body,
                 };
 
-                route
-                    .executor
-                    .exec(cx, req)
-                    .await
-                    #response_conversion
+                #route_response
             };
 
             #registration
@@ -1006,24 +994,37 @@ fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
 // Response conversion
 // ============================================================
 
-fn generate_response_conversion(body: crate::response_body::ResponseBody) -> TokenStream2 {
-    match body {
+fn generate_route_response(body: crate::response_body::ResponseBody) -> TokenStream2 {
+    let resp_body_type = match body {
         crate::response_body::ResponseBody::Json => {
             quote! {
-                .into_json_response()
+                into_axum_json()
             }
         }
 
         crate::response_body::ResponseBody::String => {
             quote! {
-                .into_string_response()
+                into_axum_string()
             }
         }
 
         crate::response_body::ResponseBody::Html => {
             quote! {
-                .into_html_response()
+                into_axum_html()
             }
+        }
+
+        crate::response_body::ResponseBody::Empty => {
+            quote! {
+                into_axum_empty()
+            }
+        }
+    };
+
+    quote! {
+        match route.executor.exec(cx, req).await {
+            Ok(resp) => resp.#resp_body_type,
+            Err(err) => err.#resp_body_type,
         }
     }
 }

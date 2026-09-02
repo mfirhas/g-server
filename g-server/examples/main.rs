@@ -233,7 +233,10 @@ pub fn __route_app_a_handler_1(
             body,
         };
 
-        route.executor.exec(cx, req).await.into_json_response()
+        match route.executor.exec(cx, req).await {
+            Ok(resp) => resp.into_axum_json(),
+            Err(err) => err.into_axum_json(),
+        }
     };
 
     let router = match route.method {
@@ -293,7 +296,10 @@ pub fn __route_app_a_handler_2(
             body,
         };
 
-        route.executor.exec(cx, req).await.into_json_response()
+        match route.executor.exec(cx, req).await {
+            Ok(resp) => resp.into_axum_json(),
+            Err(err) => err.into_axum_json(),
+        }
     };
 
     let router = match route.method {

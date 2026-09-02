@@ -17,6 +17,7 @@ pub(crate) enum ResponseBody {
     Json,
     String,
     Html,
+    Empty,
 }
 
 impl Display for ResponseBody {
@@ -25,6 +26,7 @@ impl Display for ResponseBody {
             Self::Json => write!(f, "Json"),
             Self::String => write!(f, "String"),
             Self::Html => write!(f, "Html"),
+            Self::Empty => write!(f, "Empty"),
         }
     }
 }
@@ -39,6 +41,8 @@ impl FromStr for ResponseBody {
             "String" | "Text" | "string" | "text" => Ok(ResponseBody::String),
 
             "Html" | "html" => Ok(ResponseBody::Html),
+
+            "Empty" | "empty" | "None" | "none" => Ok(ResponseBody::Empty),
 
             _ => {
                 return Err("supported response body type: json, string/text, html");

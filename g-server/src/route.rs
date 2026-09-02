@@ -24,6 +24,7 @@ pub enum ResponseBodyType {
     Json,
     String,
     Html,
+    Empty,
 }
 
 /// Contains all middlewares(if any) and handler.
