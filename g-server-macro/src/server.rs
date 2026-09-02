@@ -16,6 +16,8 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
         match key.to_string().as_str() {
             // OPTIONAL.
             "config" => {
+                input.parse::<Token![:]>()?;
+
                 let content;
 
                 braced!(content in input);
@@ -43,42 +45,52 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
 
             // Routes.
             "get" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Get)?);
             }
 
             "post" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Post)?);
             }
 
             "put" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Put)?);
             }
 
             "patch" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Patch)?);
             }
 
             "delete" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Delete)?);
             }
 
             "options" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Options)?);
             }
 
             "head" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Head)?);
             }
 
             "trace" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Trace)?);
             }
 
             "query" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Query)?);
             }
 
             "any" => {
+                input.parse::<Token![:]>()?;
                 routes.push(crate::route::parse_route(input, HttpMethod::Any)?);
             }
 
