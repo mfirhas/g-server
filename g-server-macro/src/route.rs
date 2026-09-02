@@ -2,9 +2,12 @@ use proc_macro2::{Ident, Span};
 use quote::format_ident;
 use syn::{Expr, Path, Result, Token, Type, braced, parse::ParseStream};
 
-use crate::Server;
+use crate::server::Server;
 
-pub(crate) fn parse_route(input: ParseStream<'_>, method: crate::HttpMethod) -> Result<Route> {
+pub(crate) fn parse_route(
+    input: ParseStream<'_>,
+    method: crate::server::HttpMethod,
+) -> Result<Route> {
     let content;
 
     braced!(content in input);
@@ -160,7 +163,7 @@ pub(crate) fn route_function_ident(server: &Server, index: usize) -> Ident {
 }
 
 pub(crate) struct Route {
-    pub(crate) method: crate::HttpMethod,
+    pub(crate) method: crate::server::HttpMethod,
 
     // MANDATORY.
     //

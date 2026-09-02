@@ -3,9 +3,8 @@
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use std::collections::HashSet;
 use syn::{
-    Expr, LitInt, LitStr, Path, Result, Token, Type, braced,
+    LitInt, LitStr, Path, Result, Token, braced,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
@@ -14,6 +13,8 @@ mod config;
 mod request_body;
 mod response_body;
 mod route;
+mod server;
+use server::GServer;
 
 mod axum_impl;
 
@@ -25,53 +26,6 @@ pub fn gserver(input: TokenStream) -> TokenStream {
         Ok(tokens) => tokens.into(),
         Err(err) => err.into_compile_error().into(),
     }
-}
-
-// ============================================================
-// AST
-// ============================================================
-
-pub(crate) struct GServer {
-    pub(crate) servers: Vec<Server>,
-}
-
-pub(crate) struct Server {
-    pub(crate) kind: ServerKind,
-    pub(crate) name: LitStr,
-    pub(crate) ip: LitStr,
-    pub(crate) port: LitInt,
-    pub(crate) body: ServerBody,
-}
-
-pub(crate) enum ServerKind {
-    Http,
-    Sse,
-    Ws,
-    Mcp,
-}
-
-pub(crate) struct ServerBody {
-    pub(crate) config: Vec<crate::config::ConfigEntry>,
-
-    // OPTIONAL:
-    // If omitted, context is ().
-    pub(crate) context: Option<Type>,
-
-    pub(crate) routes: Vec<crate::route::Route>,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum HttpMethod {
-    Get,
-    Post,
-    Put,
-    Patch,
-    Delete,
-    Options,
-    Head,
-    Trace,
-    Query,
-    Any,
 }
 
 // ============================================================
@@ -93,10 +47,8 @@ impl Parse for GServer {
             let kind_ident: Ident = input.parse()?;
 
             let kind = match kind_ident.to_string().as_str() {
-                "http" => ServerKind::Http,
-                "sse" => ServerKind::Sse,
-                "ws" => ServerKind::Ws,
-                "mcp" => ServerKind::Mcp,
+                "http" => crate::server::ServerKind::Http,
+                "mcp" => crate::server::ServerKind::Mcp,
 
                 _ => {
                     return Err(syn::Error::new(
@@ -126,11 +78,11 @@ impl Parse for GServer {
             let body;
             braced!(body in input);
 
-            let body = parse_server_body(&body)?;
+            let body = crate::server::parse_server_body(&body)?;
 
             consume_comma(input)?;
 
-            servers.push(Server {
+            servers.push(crate::server::Server {
                 kind,
                 name,
                 ip,
@@ -139,104 +91,8 @@ impl Parse for GServer {
             });
         }
 
-        Ok(Self { servers })
+        Self::try_new(servers)
     }
-}
-
-// ============================================================
-// Server body
-// ============================================================
-
-fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
-    let mut config = Vec::new();
-    let mut context = None;
-    let mut routes = Vec::new();
-
-    while !input.is_empty() {
-        let key: Ident = input.parse()?;
-
-        match key.to_string().as_str() {
-            // OPTIONAL.
-            "config" => {
-                let content;
-
-                braced!(content in input);
-
-                config = crate::config::parse_config(&content)?;
-            }
-
-            // OPTIONAL.
-            //
-            // If omitted, generated context is ().
-            "app_context" => {
-                input.parse::<Token![:]>()?;
-
-                context = Some(input.parse()?);
-            }
-
-            // GROUPS are part of the DSL plan but are intentionally
-            // not implemented in this route-first implementation yet.
-            "group" => {
-                return Err(syn::Error::new(
-                    key.span(),
-                    "`group` is not implemented yet",
-                ));
-            }
-
-            // Routes.
-            "get" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Get)?);
-            }
-
-            "post" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Post)?);
-            }
-
-            "put" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Put)?);
-            }
-
-            "patch" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Patch)?);
-            }
-
-            "delete" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Delete)?);
-            }
-
-            "options" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Options)?);
-            }
-
-            "head" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Head)?);
-            }
-
-            "trace" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Trace)?);
-            }
-
-            "query" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Query)?);
-            }
-
-            "any" => {
-                routes.push(crate::route::parse_route(input, HttpMethod::Any)?);
-            }
-
-            _ => {
-                return Err(syn::Error::new(key.span(), "unexpected server member"));
-            }
-        }
-
-        consume_comma(input)?;
-    }
-
-    Ok(ServerBody {
-        config,
-        context,
-        routes,
-    })
 }
 
 pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
@@ -252,8 +108,6 @@ pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
 // ============================================================
 
 fn expand(input: GServer) -> Result<TokenStream2> {
-    validate_servers(&input.servers)?;
-
     // --------------------------------------------------------
     // Servers are OPTIONAL.
     //
@@ -263,7 +117,7 @@ fn expand(input: GServer) -> Result<TokenStream2> {
     let http_servers = input
         .servers
         .iter()
-        .filter(|server| matches!(server.kind, ServerKind::Http))
+        .filter(|server| matches!(server.kind, crate::server::ServerKind::Http))
         .collect::<Vec<_>>();
 
     // --------------------------------------------------------
@@ -273,23 +127,9 @@ fn expand(input: GServer) -> Result<TokenStream2> {
 
     for server in &input.servers {
         match server.kind {
-            ServerKind::Http => {}
+            crate::server::ServerKind::Http => {}
 
-            ServerKind::Sse => {
-                return Err(syn::Error::new(
-                    server.name.span(),
-                    "`sse` server is not implemented yet",
-                ));
-            }
-
-            ServerKind::Ws => {
-                return Err(syn::Error::new(
-                    server.name.span(),
-                    "`ws` server is not implemented yet",
-                ));
-            }
-
-            ServerKind::Mcp => {
+            crate::server::ServerKind::Mcp => {
                 return Err(syn::Error::new(
                     server.name.span(),
                     "`mcp` server is not implemented yet",
@@ -323,84 +163,10 @@ fn expand(input: GServer) -> Result<TokenStream2> {
 }
 
 // ============================================================
-// Validation
-// ============================================================
-
-fn validate_servers(servers: &[Server]) -> Result<()> {
-    let mut names = HashSet::new();
-    let mut ports = HashSet::new();
-
-    for server in servers {
-        // ----------------------------------------------------
-        // Server name must be unique.
-        // ----------------------------------------------------
-
-        let name = server.name.value();
-
-        if !names.insert(name.clone()) {
-            return Err(syn::Error::new(
-                server.name.span(),
-                format!("duplicate server name `{name}`"),
-            ));
-        }
-
-        // ----------------------------------------------------
-        // Port must be unique.
-        // ----------------------------------------------------
-
-        let port: u16 = server.port.base10_parse()?;
-
-        if !ports.insert(port) {
-            return Err(syn::Error::new(
-                server.port.span(),
-                format!("duplicate server port `{port}`"),
-            ));
-        }
-
-        // ----------------------------------------------------
-        // HTTP-specific validation.
-        // ----------------------------------------------------
-
-        if matches!(server.kind, ServerKind::Http) {
-            validate_routes(server)?;
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_routes(server: &Server) -> Result<()> {
-    let mut routes = HashSet::new();
-
-    for route in &server.body.routes {
-        if let Expr::Lit(expr) = &route.endpoint {
-            if let syn::Lit::Str(endpoint) = &expr.lit {
-                let endpoint_value = endpoint.value();
-
-                let key = (route.method, endpoint_value.clone());
-
-                if !routes.insert(key) {
-                    return Err(syn::Error::new(
-                        endpoint.span(),
-                        format!(
-                            "duplicate route: {} {}",
-                            method_name(route.method),
-                            endpoint_value,
-                        ),
-                    ));
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-// ============================================================
 // main()
 // ============================================================
 
-fn generate_main(servers: &[&Server]) -> TokenStream2 {
+fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     // --------------------------------------------------------
     // OPTIONAL: zero servers.
     //
@@ -493,7 +259,7 @@ fn generate_main(servers: &[&Server]) -> TokenStream2 {
 // __init_<server>()
 // ============================================================
 
-fn generate_init_function(server: &Server) -> Result<TokenStream2> {
+fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2> {
     let init = init_ident(server);
 
     let name = server.name.value();
@@ -578,7 +344,7 @@ fn generate_init_function(server: &Server) -> Result<TokenStream2> {
 // ============================================================
 
 fn generate_route_function(
-    server: &Server,
+    server: &crate::server::Server,
     route: &crate::route::Route,
     index: usize,
 ) -> Result<TokenStream2> {
@@ -612,7 +378,7 @@ fn generate_route_function(
 
     let route_response = generate_route_response(route.response_body);
 
-    let method = method_tokens(route.method);
+    let method = route.method.method_tokens();
 
     let response_body_type = format_ident!("{}", route.response_body.to_string());
 
@@ -763,9 +529,9 @@ fn generate_route_response(body: crate::response_body::ResponseBody) -> TokenStr
 // Axum routing
 // ============================================================
 
-fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
+fn generate_route_registration(method: crate::server::HttpMethod) -> TokenStream2 {
     match method {
-        HttpMethod::Get => {
+        crate::server::HttpMethod::Get => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -776,7 +542,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Post => {
+        crate::server::HttpMethod::Post => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -787,7 +553,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Put => {
+        crate::server::HttpMethod::Put => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -798,7 +564,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Patch => {
+        crate::server::HttpMethod::Patch => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -809,7 +575,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Delete => {
+        crate::server::HttpMethod::Delete => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -820,7 +586,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Options => {
+        crate::server::HttpMethod::Options => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -831,7 +597,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Head => {
+        crate::server::HttpMethod::Head => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -842,7 +608,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Trace => {
+        crate::server::HttpMethod::Trace => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -855,7 +621,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
 
         // Current DSL semantics:
         // `query` is represented by GET at the Axum layer.
-        HttpMethod::Query => {
+        crate::server::HttpMethod::Query => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -866,7 +632,7 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
             }
         }
 
-        HttpMethod::Any => {
+        crate::server::HttpMethod::Any => {
             quote! {
                 router.route(
                     route.endpoint,
@@ -880,62 +646,10 @@ fn generate_route_registration(method: HttpMethod) -> TokenStream2 {
 }
 
 // ============================================================
-// HttpMethod
-// ============================================================
-
-fn method_tokens(method: HttpMethod) -> TokenStream2 {
-    let ident = match method {
-        HttpMethod::Get => {
-            format_ident!("Get")
-        }
-
-        HttpMethod::Post => {
-            format_ident!("Post")
-        }
-
-        HttpMethod::Put => {
-            format_ident!("Put")
-        }
-
-        HttpMethod::Patch => {
-            format_ident!("Patch")
-        }
-
-        HttpMethod::Delete => {
-            format_ident!("Delete")
-        }
-
-        HttpMethod::Options => {
-            format_ident!("Options")
-        }
-
-        HttpMethod::Head => {
-            format_ident!("Head")
-        }
-
-        HttpMethod::Trace => {
-            format_ident!("Trace")
-        }
-
-        HttpMethod::Query => {
-            format_ident!("Query")
-        }
-
-        HttpMethod::Any => {
-            format_ident!("Any")
-        }
-    };
-
-    quote! {
-        g_server::route::HttpMethod::#ident
-    }
-}
-
-// ============================================================
 // Identifiers
 // ============================================================
 
-fn server_ident(server: &Server) -> Ident {
+fn server_ident(server: &crate::server::Server) -> Ident {
     // NOTE:
     //
     // This currently assumes the server name can be used as
@@ -949,25 +663,6 @@ fn server_ident(server: &Server) -> Ident {
     Ident::new(&server.name.value(), server.name.span())
 }
 
-fn init_ident(server: &Server) -> Ident {
+fn init_ident(server: &crate::server::Server) -> Ident {
     format_ident!("__init_{}", server.name.value())
-}
-
-// ============================================================
-// Method name for diagnostics
-// ============================================================
-
-fn method_name(method: HttpMethod) -> &'static str {
-    match method {
-        HttpMethod::Get => "GET",
-        HttpMethod::Post => "POST",
-        HttpMethod::Put => "PUT",
-        HttpMethod::Patch => "PATCH",
-        HttpMethod::Delete => "DELETE",
-        HttpMethod::Options => "OPTIONS",
-        HttpMethod::Head => "HEAD",
-        HttpMethod::Trace => "TRACE",
-        HttpMethod::Query => "QUERY",
-        HttpMethod::Any => "ANY",
-    }
 }
