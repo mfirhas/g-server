@@ -14,6 +14,8 @@ mod config;
 mod request_body;
 mod response_body;
 
+mod axum_impl;
+
 #[proc_macro]
 pub fn gserver(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as GServer);
@@ -785,7 +787,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
         .unwrap_or_else(|| quote!(()));
 
     // OPTIONAL request body.
-    let body_extractor = crate::request_body::generate_body_extractor(&route.request_body);
+    let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
 
     let middleware_chain = generate_middleware_chain(route, handler);
 
