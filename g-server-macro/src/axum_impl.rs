@@ -6,18 +6,6 @@ use crate::request_body::RequestBody;
 
 pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
     // --------------------------------------------------------
-    // Servers are OPTIONAL.
-    //
-    // Zero servers is valid.
-    // --------------------------------------------------------
-
-    let http_servers = input
-        .servers
-        .iter()
-        .filter(|server| matches!(server.kind, crate::server::ServerKind::Http))
-        .collect::<Vec<_>>();
-
-    // --------------------------------------------------------
     // SSE / WS / MCP are recognized by the parser, but not
     // implemented yet.
     // --------------------------------------------------------
@@ -35,16 +23,18 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         }
     }
 
-    let main = generate_main(&http_servers);
+    let servers = input.servers.iter().collect::<Vec<_>>();
 
-    let initializers = http_servers
+    let main = generate_main(&servers);
+
+    let initializers = servers
         .iter()
         .map(|server| generate_init_function(server))
         .collect::<Result<Vec<_>>>()?;
 
     let mut routes = Vec::new();
 
-    for server in &http_servers {
+    for server in &servers {
         for (index, route) in server.body.routes.iter().enumerate() {
             routes.push(generate_route_function(server, route, index)?);
         }
