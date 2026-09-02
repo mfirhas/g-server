@@ -74,7 +74,7 @@ impl Response {
 
         *resp.status_mut() = self.status;
 
-        resp.headers_mut().extend(self.headers);
+        *resp.headers_mut() = self.headers;
 
         resp
     }
@@ -86,7 +86,12 @@ impl Response<String> {
 
         *resp.status_mut() = self.status;
 
-        resp.headers_mut().extend(self.headers);
+        *resp.headers_mut() = self.headers;
+
+        resp.headers_mut().insert(
+            crate::http::header::CONTENT_TYPE,
+            crate::http::HeaderValue::from_static("text/plain; charset=utf-8"),
+        );
 
         resp
     }
@@ -96,7 +101,12 @@ impl Response<String> {
 
         *resp.status_mut() = self.status;
 
-        resp.headers_mut().extend(self.headers);
+        *resp.headers_mut() = self.headers;
+
+        resp.headers_mut().insert(
+            crate::http::header::CONTENT_TYPE,
+            crate::http::HeaderValue::from_static("text/html; charset=utf-8"),
+        );
 
         resp
     }
@@ -111,7 +121,12 @@ where
 
         *resp.status_mut() = self.status;
 
-        resp.headers_mut().extend(self.headers);
+        *resp.headers_mut() = self.headers;
+
+        resp.headers_mut().insert(
+            crate::http::header::CONTENT_TYPE,
+            crate::http::HeaderValue::from_static("application/json"),
+        );
 
         resp
     }
