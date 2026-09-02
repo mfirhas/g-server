@@ -11,6 +11,7 @@ use syn::{
 };
 
 mod config;
+mod request_body;
 mod response_body;
 
 #[proc_macro]
@@ -82,7 +83,7 @@ pub(crate) struct Route {
 
     // OPTIONAL.
     // If omitted => body ().
-    pub(crate) request_body: Option<RequestBody>,
+    pub(crate) request_body: Option<crate::request_body::RequestBody>,
 
     // OPTIONAL.
     pub(crate) middlewares: Vec<Path>,
@@ -93,17 +94,6 @@ pub(crate) struct Route {
     // OPTIONAL.
     // Defaults to Json.
     pub(crate) response_body: crate::response_body::ResponseBody,
-}
-
-pub(crate) enum RequestBody {
-    // Json(StructType)
-    Json(Type),
-
-    // Form(StructType)
-    Form(Type),
-
-    // String
-    String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -358,7 +348,7 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
             "request_body" => {
                 content.parse::<Token![:]>()?;
 
-                request_body = Some(parse_request_body(&content)?);
+                request_body = Some(crate::request_body::parse_request_body(&content)?);
             }
 
             // OPTIONAL.
@@ -430,41 +420,6 @@ fn parse_route(input: ParseStream<'_>, method: HttpMethod) -> Result<Route> {
         handler,
         response_body,
     })
-}
-
-// ============================================================
-// Request body
-// ============================================================
-
-fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> {
-    let kind: Ident = input.parse()?;
-
-    match kind.to_string().as_str() {
-        "String" => Ok(RequestBody::String),
-
-        "Json" => {
-            let body;
-            syn::parenthesized!(body in input);
-
-            let ty: Type = body.parse()?;
-
-            Ok(RequestBody::Json(ty))
-        }
-
-        "Form" => {
-            let body;
-            syn::parenthesized!(body in input);
-
-            let ty: Type = body.parse()?;
-
-            Ok(RequestBody::Form(ty))
-        }
-
-        _ => Err(syn::Error::new(
-            kind.span(),
-            "expected `String`, `Json(Type)`, or `Form(Type)`",
-        )),
-    }
 }
 
 pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
@@ -830,7 +785,7 @@ fn generate_route_function(server: &Server, route: &Route, index: usize) -> Resu
         .unwrap_or_else(|| quote!(()));
 
     // OPTIONAL request body.
-    let body_extractor = generate_body_extractor(&route.request_body);
+    let body_extractor = crate::request_body::generate_body_extractor(&route.request_body);
 
     let middleware_chain = generate_middleware_chain(route, handler);
 
@@ -942,52 +897,6 @@ fn generate_middleware_chain(route: &Route, handler: &Path) -> TokenStream2 {
     }
 
     output
-}
-
-// ============================================================
-// Request body
-// ============================================================
-
-fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
-    match body {
-        // JSON body:
-        //
-        // request_body: Json(MyStruct)
-        Some(RequestBody::Json(ty)) => {
-            quote! {
-                ::axum::extract::Json(body):
-                    ::axum::extract::Json<#ty>,
-            }
-        }
-
-        // Form body:
-        //
-        // request_body: Form(MyStruct)
-        Some(RequestBody::Form(ty)) => {
-            quote! {
-                ::axum::extract::Form(body):
-                    ::axum::extract::Form<#ty>,
-            }
-        }
-
-        // String body:
-        //
-        // request_body: String
-        Some(RequestBody::String) => {
-            quote! {
-                body: String,
-            }
-        }
-
-        // No request_body:
-        //
-        // body is simply ().
-        None => {
-            quote! {
-                body: (),
-            }
-        }
-    }
 }
 
 // ============================================================
