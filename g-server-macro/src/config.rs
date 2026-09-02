@@ -31,7 +31,7 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
 
         let value: Expr = input.parse()?;
 
-        let config = ConfigEntry::parse(name.clone(), value)
+        let config = ConfigEntry::try_new(name.clone(), value)
             .map_err(|err| syn::Error::new(name.span(), err.to_string()))?;
 
         entries.push(config);
@@ -110,7 +110,7 @@ pub(crate) struct ConfigEntry {
 }
 
 impl ConfigEntry {
-    pub(crate) fn parse(name: Ident, mut value: Expr) -> Result<Self> {
+    pub(crate) fn try_new(name: Ident, mut value: Expr) -> Result<Self> {
         match name.to_string().as_str() {
             "timeout" => Self::validate_integer(&value),
             "concurrency_limit" => Self::validate_integer(&value),
