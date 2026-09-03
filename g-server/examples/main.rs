@@ -1,5 +1,6 @@
 use g_server::*;
 
+use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,12 +59,23 @@ pub struct ErrorResponse {
     msg: String,
 }
 
+impl ErrorResponse {
+    pub fn new_middleware_err(msg: impl AsRef<str>) -> Self {
+        Self {
+            msg: msg.as_ref().to_string(),
+        }
+    }
+}
+
 pub async fn handler_1(
     cx: Context,
     req: Request<PathParams, QueryParams, RequestBody>,
 ) -> Result<Response<ResponseBody>, Response<ErrorResponse>> {
+    println!("before sleeping...");
+    tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+    println!("after sleeping...");
     Ok(Response {
-        status: http::StatusCode::OK,
+        status: http::StatusCode::CREATED,
         headers: http::HeaderMap::new(),
         body: ResponseBody {
             user_id: req.path_params.user_id,
@@ -170,36 +182,127 @@ pub fn __init_app_a() -> (Server, axum::Router<()>) {
         port: 42069,           // from server port
     };
 
-    let global_config = Config::default();
+    let mut global_config = Config::empty();
+    global_config.timeout = Some(100);
     // if user supply any config, we define them here:
     // global_config.timeout = Some(X); // X = user defined timeout from macro
     // ...
 
     let context = Context::init(); // `Context` is from macro, appended with `::init()`
 
-    let router = axum::Router::new();
-
-    // config middlewares, we define them if they're not None.
-    // if let Some(timeout) = global_config.timeout {
-    //     router = router.layer(TimeoutLayer::new(Duration::from_millis(timeout.into())));
-    // }
+    let mut router = axum::Router::new();
 
     // we register all routes here
     // We call all functions registering the router's handlers: __route_<server_name>_<handler_name>
-    let router = __route_app_a_handler_1(router, global_config.clone());
-    let router = __route_app_a_handler_2(router, global_config.clone());
+    router = __route_app_a_handler_1(router);
+    router = __route_app_a_handler_2(router);
+
+    // config middlewares, we define them if they're not None.
+    router = __register_global_middlewares(&global_config, router);
 
     let router = router.with_state(context);
 
     (server, router)
 }
 
+pub fn __register_global_middlewares(
+    global_config: &::g_server::Config,
+    mut router: ::axum::Router<Context>,
+) -> ::axum::Router<Context> {
+    if let Some(ms) = global_config.timeout {
+        router = router.layer(
+            ::tower::ServiceBuilder::new()
+                .layer(::axum::error_handling::HandleErrorLayer::new(
+                    |err: ::tower::BoxError| async move {
+                        (StatusCode::REQUEST_TIMEOUT, err.to_string())
+                    },
+                ))
+                .layer(::tower::timeout::TimeoutLayer::new(
+                    ::tokio::time::Duration::from_millis(ms),
+                )),
+        );
+    }
+    if let Some(n) = global_config.concurrency_limit {
+        router = router.layer(::tower::limit::ConcurrencyLimitLayer::new(n));
+    }
+    if let Some(kib) = global_config.body_limit {
+        router = router.layer(::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+    }
+    if let Some(c) = global_config.compression {
+        router = router.layer(match c {
+            Compression::All => ::tower_http::compression::CompressionLayer::new(),
+            Compression::Gzip => ::tower_http::compression::CompressionLayer::new()
+                .no_br()
+                .no_zstd()
+                .no_deflate(),
+            Compression::Brotli => ::tower_http::compression::CompressionLayer::new()
+                .no_gzip()
+                .no_zstd()
+                .no_deflate(),
+            Compression::Zstd => ::tower_http::compression::CompressionLayer::new()
+                .no_gzip()
+                .no_br()
+                .no_deflate(),
+            Compression::Deflate => ::tower_http::compression::CompressionLayer::new()
+                .no_gzip()
+                .no_br()
+                .no_zstd(),
+        });
+    }
+    router
+}
+
+pub fn __register_route_middlewares(
+    config: &::g_server::Config,
+    mut router: axum::routing::MethodRouter<Context>,
+) -> axum::routing::MethodRouter<Context> {
+    if let Some(ms) = config.timeout {
+        router = router.route_layer(
+            ::tower::ServiceBuilder::new()
+                .layer(::axum::error_handling::HandleErrorLayer::new(
+                    |err: ::tower::BoxError| async move {
+                        (StatusCode::REQUEST_TIMEOUT, err.to_string())
+                    },
+                ))
+                .layer(::tower::timeout::TimeoutLayer::new(
+                    ::tokio::time::Duration::from_millis(ms),
+                )),
+        );
+    }
+    if let Some(n) = config.concurrency_limit {
+        router = router.route_layer(::tower::limit::ConcurrencyLimitLayer::new(n));
+    }
+    if let Some(kib) = config.body_limit {
+        router = router.route_layer(::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+    }
+    if let Some(c) = config.compression {
+        router = router.route_layer(match c {
+            Compression::All => ::tower_http::compression::CompressionLayer::new(),
+            Compression::Gzip => ::tower_http::compression::CompressionLayer::new()
+                .no_br()
+                .no_zstd()
+                .no_deflate(),
+            Compression::Brotli => ::tower_http::compression::CompressionLayer::new()
+                .no_gzip()
+                .no_zstd()
+                .no_deflate(),
+            Compression::Zstd => ::tower_http::compression::CompressionLayer::new()
+                .no_gzip()
+                .no_br()
+                .no_deflate(),
+            Compression::Deflate => ::tower_http::compression::CompressionLayer::new()
+                .no_gzip()
+                .no_br()
+                .no_zstd(),
+        });
+    }
+    router
+}
+
 // function name comes from `__route_<server_name>_<handler_name>`
-pub fn __route_app_a_handler_1(
-    router: axum::Router<Context>,
-    global_config: Config,
-) -> axum::Router<Context> {
-    let config = global_config;
+pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Context> {
+    let mut config = Config::empty();
+    config.timeout = Some(2000);
     // if user supply any config, we define them here:
     // global_config.timeout = // user defined timeout from macro
     // ...
@@ -213,12 +316,11 @@ pub fn __route_app_a_handler_1(
     let route = route::Route::<_> {
         method: route::HttpMethod::Post, // from macro: route::HttpMethod::$expr -> method
         endpoint: "/route_1/{user_id}/{user_email}",
-        config,
+        config: config.clone(),
         response_body_type: route::ResponseBodyType::Json, // from macro. route::ResponseBodyType::$expr
         executor: executor,
     };
 
-    #[rustfmt::skip]
     let route_handler = move |
           axum::extract::State(cx): axum::extract::State<Context>, // `Context` comes from macro
           headers: http::HeaderMap,
@@ -240,21 +342,40 @@ pub fn __route_app_a_handler_1(
     };
 
     let router = match route.method {
-        route::HttpMethod::Get => router.route(route.endpoint, axum::routing::get(route_handler)),
+        route::HttpMethod::Get => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::get(route_handler)),
+        ),
 
-        route::HttpMethod::Post => router.route(route.endpoint, axum::routing::post(route_handler)),
+        route::HttpMethod::Post => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::post(route_handler)),
+        ),
 
-        route::HttpMethod::Put => router.route(route.endpoint, axum::routing::put(route_handler)),
+        route::HttpMethod::Put => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::put(route_handler)),
+        ),
 
-        route::HttpMethod::Patch => {
-            router.route(route.endpoint, axum::routing::patch(route_handler))
-        }
+        route::HttpMethod::Patch => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::patch(route_handler)),
+        ),
 
-        route::HttpMethod::Head => router.route(route.endpoint, axum::routing::head(route_handler)),
+        route::HttpMethod::Head => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::head(route_handler)),
+        ),
 
-        route::HttpMethod::Query => router.route(route.endpoint, axum::routing::get(route_handler)),
+        route::HttpMethod::Query => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::get(route_handler)),
+        ),
 
-        route::HttpMethod::Any => router.route(route.endpoint, axum::routing::any(route_handler)),
+        route::HttpMethod::Any => router.route(
+            route.endpoint,
+            __register_route_middlewares(&config, axum::routing::any(route_handler)),
+        ),
     };
 
     router
@@ -262,11 +383,10 @@ pub fn __route_app_a_handler_1(
 
 // another handler within same server,
 // same rules applied.
-pub fn __route_app_a_handler_2(
-    router: axum::Router<Context>,
-    global_config: Config,
-) -> axum::Router<Context> {
-    let config = global_config;
+pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Context> {
+    let mut config = Config::empty();
+    config.timeout = Some(2000);
+
     let executor = route::Executor::new(handler_2);
     // We assemble middlewares from last to first: first in array execute first, so we declare last here to make it executed first.
     // We assemble these middlewares directly from macro declaration.
@@ -281,26 +401,24 @@ pub fn __route_app_a_handler_2(
         executor: executor,
     };
 
-    #[rustfmt::skip]
-    let route_handler = move |
-          axum::extract::State(cx): axum::extract::State<Context>,
-          headers: axum::http::HeaderMap,
-          axum::extract::Path(path_params): axum::extract::Path<()>,
-          axum::extract::Query(query_params): axum::extract::Query<()>,
-          axum::extract::Json(body): axum::extract::Json<RequestBody2>,
-    | async move {
-        let req = Request {
-            headers,
-            path_params,
-            query_params,
-            body,
-        };
+    let route_handler =
+        move |axum::extract::State(cx): axum::extract::State<Context>,
+              headers: axum::http::HeaderMap,
+              axum::extract::Path(path_params): axum::extract::Path<()>,
+              axum::extract::Query(query_params): axum::extract::Query<()>,
+              axum::extract::Json(body): axum::extract::Json<RequestBody2>| async move {
+            let req = Request {
+                headers,
+                path_params,
+                query_params,
+                body,
+            };
 
-        match route.executor.exec(cx, req).await {
-            Ok(resp) => resp.into_axum_json(),
-            Err(err) => err.into_axum_json(),
-        }
-    };
+            match route.executor.exec(cx, req).await {
+                Ok(resp) => resp.into_axum_json(),
+                Err(err) => err.into_axum_json(),
+            }
+        };
 
     let router = match route.method {
         route::HttpMethod::Get => router.route(route.endpoint, axum::routing::get(route_handler)),

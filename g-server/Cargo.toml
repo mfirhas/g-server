@@ -28,8 +28,8 @@ all-features = true
 [dependencies]
 g-server-macro = { path = "../g-server-macro" }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
-tower = "0.5"
-tower-http = "0.7"
+tower = { version = "0.5", features = ["limit"] }
+tower-http = { version = "0.7", features = ["limit", "compression-full"] }
 http = "1"
 axum = "0.8.9"
 bytes = "1"
