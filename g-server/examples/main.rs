@@ -205,10 +205,13 @@ pub fn __init_app_a() -> (Server, axum::Router<()>) {
     (server, router)
 }
 
-pub fn __register_global_middlewares(
+pub fn __register_global_middlewares<C>(
     global_config: &::g_server::Config,
-    mut router: ::axum::Router<Context>,
-) -> ::axum::Router<Context> {
+    mut router: ::axum::Router<C>,
+) -> ::axum::Router<C>
+where
+    C: Clone + Send + Sync + 'static,
+{
     if let Some(ms) = global_config.timeout {
         router = router.layer(
             ::tower::ServiceBuilder::new()
@@ -252,10 +255,13 @@ pub fn __register_global_middlewares(
     router
 }
 
-pub fn __register_route_middlewares(
+pub fn __register_route_middlewares<C>(
     config: &::g_server::Config,
-    mut router: axum::routing::MethodRouter<Context>,
-) -> axum::routing::MethodRouter<Context> {
+    mut router: axum::routing::MethodRouter<C>,
+) -> axum::routing::MethodRouter<C>
+where
+    C: Clone + Send + Sync + 'static,
+{
     if let Some(ms) = config.timeout {
         router = router.route_layer(
             ::tower::ServiceBuilder::new()
