@@ -55,7 +55,7 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
     });
 
     quote! {
-        let mut global_config = g_server::Config::default();
+        let mut global_config = g_server::Config::empty();
         #(#assignments)*
     }
 }
