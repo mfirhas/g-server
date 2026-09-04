@@ -66,3 +66,12 @@ pub struct Route<F> {
     pub response_body_type: ResponseBodyType,
     pub executor: Executor<F>,
 }
+
+pub async fn unimplemented_handler<C, P, Q, ReqB>(
+    _: C,
+    _: Request<P, Q, ReqB>,
+) -> Result<Response<String>, Response<String>> {
+    Err(Response::new()
+        .with_status(crate::http::StatusCode::NOT_IMPLEMENTED)
+        .with_text("not implemented".into()))
+}

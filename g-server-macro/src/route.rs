@@ -130,12 +130,11 @@ pub(crate) fn parse_route(
         )
     })?;
 
-    let handler = handler.ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            "route requires mandatory field `handler`",
-        )
-    })?;
+    let handler = handler.unwrap_or_else(|| {
+        syn::parse_quote! {
+            g_server::route::unimplemented_handler
+        }
+    });
 
     Ok(Route {
         method,
