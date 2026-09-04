@@ -27,6 +27,11 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
     let main = generate_main(&servers);
 
+    // global infra middlewares configs
+    let global_infra_mw = generate_global_infra_middlewares();
+    // route infra middlewares configs
+    let route_infra_mw = generate_route_infra_middlewares();
+
     let initializers = servers
         .iter()
         .map(|server| generate_init_function(server))
@@ -42,6 +47,10 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
     Ok(quote! {
         #main
+
+        #global_infra_mw
+
+        #route_infra_mw
 
         #(#initializers)*
 
@@ -142,6 +151,114 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     }
 }
 
+fn generate_global_infra_middlewares() -> TokenStream2 {
+    quote! {
+        fn __register_global_middlewares<C>(
+            global_config: &::g_server::Config,
+            mut router: ::axum::Router<C>,
+        ) -> ::axum::Router<C>
+        where
+            C: Clone + Send + Sync + 'static,
+        {
+            if let Some(ms) = global_config.timeout {
+                router = router.layer(
+                    ::tower::ServiceBuilder::new()
+                        .layer(::axum::error_handling::HandleErrorLayer::new(
+                            |err: ::tower::BoxError| async move {
+                                (::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
+                            },
+                        ))
+                        .layer(::tower::timeout::TimeoutLayer::new(
+                            ::tokio::time::Duration::from_millis(ms),
+                        )),
+                );
+            }
+            if let Some(n) = global_config.concurrency_limit {
+                router = router.layer(::tower::limit::ConcurrencyLimitLayer::new(n));
+            }
+            if let Some(kib) = global_config.body_limit {
+                router = router.layer(::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+            }
+            if let Some(c) = global_config.compression {
+                router = router.layer(match c {
+                    g_server::Compression::All => ::tower_http::compression::CompressionLayer::new(),
+                    g_server::Compression::Gzip => ::tower_http::compression::CompressionLayer::new()
+                        .no_br()
+                        .no_zstd()
+                        .no_deflate(),
+                    g_server::Compression::Brotli => ::tower_http::compression::CompressionLayer::new()
+                        .no_gzip()
+                        .no_zstd()
+                        .no_deflate(),
+                    g_server::Compression::Zstd => ::tower_http::compression::CompressionLayer::new()
+                        .no_gzip()
+                        .no_br()
+                        .no_deflate(),
+                    g_server::Compression::Deflate => ::tower_http::compression::CompressionLayer::new()
+                        .no_gzip()
+                        .no_br()
+                        .no_zstd(),
+                });
+            }
+            router
+        }
+    }
+}
+
+fn generate_route_infra_middlewares() -> TokenStream2 {
+    quote! {
+        fn __register_route_middlewares<C>(
+            config: &::g_server::Config,
+            mut router: axum::routing::MethodRouter<C>,
+        ) -> axum::routing::MethodRouter<C>
+        where
+            C: Clone + Send + Sync + 'static,
+        {
+            if let Some(ms) = config.timeout {
+                router = router.route_layer(
+                    ::tower::ServiceBuilder::new()
+                        .layer(::axum::error_handling::HandleErrorLayer::new(
+                            |err: ::tower::BoxError| async move {
+                                (::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
+                            },
+                        ))
+                        .layer(::tower::timeout::TimeoutLayer::new(
+                            ::tokio::time::Duration::from_millis(ms),
+                        )),
+                );
+            }
+            if let Some(n) = config.concurrency_limit {
+                router = router.route_layer(::tower::limit::ConcurrencyLimitLayer::new(n));
+            }
+            if let Some(kib) = config.body_limit {
+                router = router.route_layer(::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+            }
+            if let Some(c) = config.compression {
+                router = router.route_layer(match c {
+                    g_server::Compression::All => ::tower_http::compression::CompressionLayer::new(),
+                    g_server::Compression::Gzip => ::tower_http::compression::CompressionLayer::new()
+                        .no_br()
+                        .no_zstd()
+                        .no_deflate(),
+                    g_server::Compression::Brotli => ::tower_http::compression::CompressionLayer::new()
+                        .no_gzip()
+                        .no_zstd()
+                        .no_deflate(),
+                    g_server::Compression::Zstd => ::tower_http::compression::CompressionLayer::new()
+                        .no_gzip()
+                        .no_br()
+                        .no_deflate(),
+                    g_server::Compression::Deflate => ::tower_http::compression::CompressionLayer::new()
+                        .no_gzip()
+                        .no_br()
+                        .no_zstd(),
+                });
+            }
+            router
+        }
+    }
+}
+
 // ============================================================
 // __init_<server>()
 // ============================================================
@@ -186,11 +303,7 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
         let route = crate::route::route_function_ident(server, index);
 
         quote! {
-            let router =
-                #route(
-                    router,
-                    global_config.clone(),
-                );
+            router = #route(router);
         }
     });
 
@@ -213,13 +326,13 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
             // OPTIONAL context.
             #context_init
 
-            let router =
-                ::axum::Router::<#context_type>::new();
+            let mut router = ::axum::Router::<#context_type>::new();
 
             #(#route_calls)*
 
-            let router =
-                router.with_state(context);
+            router = __register_global_middlewares(&global_config, router);
+
+            let router = router.with_state(context);
 
             (server, router)
         }
@@ -279,10 +392,7 @@ fn generate_route_function(
     let registration = generate_route_registration(route.method);
 
     Ok(quote! {
-        pub fn #function(
-            router: ::axum::Router<#context_ty>,
-            global_config: g_server::Config,
-        ) -> ::axum::Router<#context_ty> {
+        pub fn #function(router: ::axum::Router<#context_ty>) -> ::axum::Router<#context_ty> {
             // Then override route-specific fields.
             #route_config
 
@@ -462,89 +572,49 @@ fn generate_route_registration(method: crate::server::HttpMethod) -> TokenStream
     match method {
         crate::server::HttpMethod::Get => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::get(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::get(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Post => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::post(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::post(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Put => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::put(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::put(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Patch => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::patch(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::patch(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Delete => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::delete(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::delete(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Options => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::options(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::options(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Head => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::head(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::head(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Trace => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::trace(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::trace(route_handler)))
             }
         }
 
@@ -552,23 +622,13 @@ fn generate_route_registration(method: crate::server::HttpMethod) -> TokenStream
         // `query` is represented by GET at the Axum layer.
         crate::server::HttpMethod::Query => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::get(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::get(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Any => {
             quote! {
-                router.route(
-                    route.endpoint,
-                    ::axum::routing::any(
-                        route_handler
-                    ),
-                )
+                router.route(route.endpoint, __register_route_middlewares(&route.config, ::axum::routing::any(route_handler)))
             }
         }
     }

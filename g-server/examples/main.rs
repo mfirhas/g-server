@@ -283,7 +283,7 @@ where
     }
     if let Some(c) = config.compression {
         router = router.route_layer(match c {
-            Compression::All => ::tower_http::compression::CompressionLayer::new(),
+            g_server::Compression::All => ::tower_http::compression::CompressionLayer::new(),
             Compression::Gzip => ::tower_http::compression::CompressionLayer::new()
                 .no_br()
                 .no_zstd()
@@ -322,7 +322,7 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
     let route = route::Route::<_> {
         method: route::HttpMethod::Post, // from macro: route::HttpMethod::$expr -> method
         endpoint: "/route_1/{user_id}/{user_email}",
-        config: config.clone(),
+        config,
         response_body_type: route::ResponseBodyType::Json, // from macro. route::ResponseBodyType::$expr
         executor: executor,
     };
@@ -350,37 +350,37 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
     let router = match route.method {
         route::HttpMethod::Get => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::get(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::get(route_handler)),
         ),
 
         route::HttpMethod::Post => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::post(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::post(route_handler)),
         ),
 
         route::HttpMethod::Put => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::put(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::put(route_handler)),
         ),
 
         route::HttpMethod::Patch => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::patch(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::patch(route_handler)),
         ),
 
         route::HttpMethod::Head => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::head(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::head(route_handler)),
         ),
 
         route::HttpMethod::Query => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::get(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::get(route_handler)),
         ),
 
         route::HttpMethod::Any => router.route(
             route.endpoint,
-            __register_route_middlewares(&config, axum::routing::any(route_handler)),
+            __register_route_middlewares(&route.config, axum::routing::any(route_handler)),
         ),
     };
 
