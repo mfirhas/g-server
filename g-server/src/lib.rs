@@ -2,7 +2,12 @@
 
 pub use ::g_server_macro::gserver;
 
+// re-exports since it's in generated code.
+pub use ::axum;
 pub use ::http;
+pub use ::tokio;
+pub use ::tower;
+pub use ::tower_http;
 
 mod config;
 pub use config::{Compression, Config};

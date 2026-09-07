@@ -1,4 +1,4 @@
-use http::{HeaderMap, StatusCode};
+use crate::http::{HeaderMap, StatusCode};
 
 #[derive(Debug, Clone)]
 pub struct Response<Body = ()> {
@@ -66,7 +66,7 @@ impl Response {
     }
 }
 
-use ::axum::response::{IntoResponse, Response as AxumResponse};
+use crate::axum::response::{IntoResponse, Response as AxumResponse};
 
 impl Response {
     pub fn into_axum_empty(self) -> AxumResponse {
@@ -97,7 +97,7 @@ impl Response<String> {
     }
 
     pub fn into_axum_html(self) -> AxumResponse {
-        let mut resp = ::axum::response::Html(self.body).into_response();
+        let mut resp = crate::axum::response::Html(self.body).into_response();
 
         *resp.status_mut() = self.status;
 
@@ -117,7 +117,7 @@ where
     Json: ::serde::Serialize,
 {
     pub fn into_axum_json(self) -> AxumResponse {
-        let mut resp = ::axum::response::Json(self.body).into_response();
+        let mut resp = crate::axum::response::Json(self.body).into_response();
 
         *resp.status_mut() = self.status;
 
