@@ -317,8 +317,9 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
         }
     });
 
-    let group_calls = server.body.groups.iter().enumerate().map(|(index, _)| {
-        let group = crate::group::group_function_ident(server, index);
+    let group_calls = server.body.groups.iter().map(|g| {
+        let paths = vec![crate::expr_to_string(&g.prefix).expect("prefix must be a string")];
+        let group = group_function_ident(server, &paths);
 
         quote! {
             router = #group(router);

@@ -1,11 +1,7 @@
 use proc_macro2::{Ident, Span};
-use quote::format_ident;
 use syn::{Expr, Path, Result, Token, braced, parse::ParseStream};
 
-use crate::{
-    route::Route,
-    server::{HttpMethod, Server},
-};
+use crate::{route::Route, server::HttpMethod};
 
 pub(crate) fn parse_group(input: ParseStream<'_>) -> Result<Group> {
     let content;
@@ -173,19 +169,6 @@ fn parse_group_members(input: ParseStream<'_>) -> Result<Vec<GroupMember>> {
     Ok(group_members)
 }
 
-pub(crate) fn group_function_ident(server: &Server, index: usize) -> Ident {
-    let group_name = server
-        .body
-        .groups
-        .get(index)
-        .and_then(|group| Some(group.prefix.clone()))
-        .and_then(|expr| crate::expr_to_string(&expr))
-        .map(|prefix| sanitize_prefix(prefix.as_str()))
-        .unwrap_or_else(|| format!("group_{index}"));
-
-    format_ident!("__group_{}_{}", server.name.value(), group_name)
-}
-
 // remove leading `/`, change other occurrences of `/` and `-` as `_`
 pub(crate) fn sanitize_prefix(prefix: &str) -> String {
     prefix
@@ -193,7 +176,7 @@ pub(crate) fn sanitize_prefix(prefix: &str) -> String {
         .unwrap_or(prefix)
         .chars()
         .map(|c| match c {
-            '/' | '-' => '_',
+            '/' | '-' | '{' | '}' | ':' => '_',
             other => other,
         })
         .collect()
