@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
+use rand::{RngExt, distr::Alphanumeric};
 use syn::{
     Expr, LitInt, LitStr, Result, Token, braced,
     parse::{Parse, ParseStream},
@@ -103,7 +104,7 @@ pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn expr_as_string(expr: Expr) -> Option<String> {
+pub(crate) fn expr_to_string(expr: &Expr) -> Option<String> {
     if let Expr::Lit(expr) = &expr {
         if let syn::Lit::Str(prefix) = &expr.lit {
             Some(prefix.value())
@@ -113,4 +114,12 @@ pub(crate) fn expr_as_string(expr: Expr) -> Option<String> {
     } else {
         None
     }
+}
+
+pub(crate) fn random_6_chars() -> String {
+    rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(6)
+        .map(char::from)
+        .collect()
 }

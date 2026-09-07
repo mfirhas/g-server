@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, Span};
-use quote::{format_ident, quote};
-use syn::{Expr, Path, Result, Token, Type, braced, parse::ParseStream};
+use quote::format_ident;
+use syn::{Expr, Path, Result, Token, braced, parse::ParseStream};
 
 use crate::{
     route::Route,
@@ -179,7 +179,7 @@ pub(crate) fn group_function_ident(server: &Server, index: usize) -> Ident {
         .groups
         .get(index)
         .and_then(|group| Some(group.prefix.clone()))
-        .and_then(crate::expr_as_string)
+        .and_then(|expr| crate::expr_to_string(&expr))
         .map(|prefix| sanitize_prefix(prefix.as_str()))
         .unwrap_or_else(|| format!("group_{index}"));
 
@@ -187,7 +187,7 @@ pub(crate) fn group_function_ident(server: &Server, index: usize) -> Ident {
 }
 
 // remove leading `/`, change other occurrences of `/` and `-` as `_`
-fn sanitize_prefix(prefix: &str) -> String {
+pub(crate) fn sanitize_prefix(prefix: &str) -> String {
     prefix
         .strip_prefix('/')
         .unwrap_or(prefix)
@@ -199,6 +199,7 @@ fn sanitize_prefix(prefix: &str) -> String {
         .collect()
 }
 
+#[derive(Clone)]
 pub(crate) struct Group {
     // mandatory
     pub(crate) prefix: Expr,
@@ -213,6 +214,7 @@ pub(crate) struct Group {
     pub(crate) members: Vec<GroupMember>,
 }
 
+#[derive(Clone)]
 pub(crate) enum GroupMember {
     Route(Box<Route>),
     Group(Box<Group>),

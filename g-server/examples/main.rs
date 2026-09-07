@@ -1,3 +1,4 @@
+use axum::routing::{get, post};
 use g_server::*;
 
 use http::StatusCode;
@@ -197,6 +198,9 @@ pub fn __init_app_a() -> (Server, axum::Router<()>) {
     router = __route_app_a_handler_1(router);
     router = __route_app_a_handler_2(router);
 
+    // groupped handlers
+    router = __group_app_a_prefix_1(router);
+
     // config middlewares, we define them if they're not None.
     router = __register_global_middlewares(&global_config, router);
 
@@ -302,6 +306,111 @@ where
                 .no_zstd(),
         });
     }
+    router
+}
+
+/**
+group: {
+    prefix: "prefix_1",
+    get: {
+        ...
+    },
+
+    post: {
+        ...
+    },
+
+    group: {
+        prefix: "prefix_2",
+
+        put: {
+            ...
+        },
+
+        group: {
+            prefix: "prefix_3",
+            patch: {
+                ...
+            }
+        }
+    },
+}
+*/
+pub fn __group_app_a_prefix_1(mut router: axum::Router<Context>) -> axum::Router<Context> {
+    let mut config = Config::empty();
+
+    let mut prefix_1_router = axum::Router::<Context>::new();
+    // get
+    prefix_1_router = __route_app_a_prefix_1_handler_1(prefix_1_router);
+
+    // post
+    prefix_1_router = __route_app_a_prefix_1_handler_2(prefix_1_router);
+
+    // group: prefix_2
+    prefix_1_router = __group_app_a_prefix_1_prefix_2(prefix_1_router);
+
+    prefix_1_router = __register_global_middlewares(&config, prefix_1_router);
+
+    router = router.nest("/prefix_1", prefix_1_router);
+
+    router
+}
+
+pub fn __route_app_a_prefix_1_handler_1(router: axum::Router<Context>) -> axum::Router<Context> {
+    // ...
+    router
+}
+
+pub fn __route_app_a_prefix_1_handler_2(router: axum::Router<Context>) -> axum::Router<Context> {
+    // ...
+    router
+}
+
+pub fn __group_app_a_prefix_1_prefix_2(mut router: axum::Router<Context>) -> axum::Router<Context> {
+    let mut config = Config::empty();
+
+    let mut prefix_1_prefix_2_router = axum::Router::<Context>::new();
+
+    // put
+    prefix_1_prefix_2_router = __route_app_a_prefix_1_prefix_2_handler1(prefix_1_prefix_2_router);
+
+    // prefix_3
+    prefix_1_prefix_2_router = __group_app_a_prefix_1_prefix_2_prefix_3(prefix_1_prefix_2_router);
+
+    prefix_1_prefix_2_router = __register_global_middlewares(&config, prefix_1_prefix_2_router);
+
+    router = router.nest("/prefix_2", prefix_1_prefix_2_router);
+
+    router
+}
+
+pub fn __route_app_a_prefix_1_prefix_2_handler1(
+    router: axum::Router<Context>,
+) -> axum::Router<Context> {
+    router
+}
+
+pub fn __group_app_a_prefix_1_prefix_2_prefix_3(
+    mut router: axum::Router<Context>,
+) -> axum::Router<Context> {
+    let mut config = Config::empty();
+
+    let mut prefix_1_prefix_2_prefix_3_router = axum::Router::<Context>::new();
+
+    prefix_1_prefix_2_prefix_3_router =
+        __route_app_a_prefix_1_prefix_2_prefix_3_handler1(prefix_1_prefix_2_prefix_3_router);
+
+    prefix_1_prefix_2_prefix_3_router =
+        __register_global_middlewares(&config, prefix_1_prefix_2_prefix_3_router);
+
+    router = router.nest("/prefix_3", prefix_1_prefix_2_prefix_3_router);
+
+    router
+}
+
+pub fn __route_app_a_prefix_1_prefix_2_prefix_3_handler1(
+    router: axum::Router<Context>,
+) -> axum::Router<Context> {
     router
 }
 

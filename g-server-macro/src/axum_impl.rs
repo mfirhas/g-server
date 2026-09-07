@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, TokenStream as TokenStream2};
+use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{Path, Result};
 
@@ -45,6 +45,14 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         }
     }
 
+    let mut group_functions = Vec::new();
+
+    for server in &servers {
+        for group in &server.body.groups {
+            generate_group_function(server, group, &[], &mut group_functions)?;
+        }
+    }
+
     Ok(quote! {
         #main
 
@@ -55,6 +63,8 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         #(#initializers)*
 
         #(#routes)*
+
+        #(#group_functions)*
     })
 }
 
@@ -307,6 +317,14 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
         }
     });
 
+    let group_calls = server.body.groups.iter().enumerate().map(|(index, _)| {
+        let group = crate::group::group_function_ident(server, index);
+
+        quote! {
+            router = #group(router);
+        }
+    });
+
     Ok(quote! {
         pub fn #init() -> (
             g_server::Server,
@@ -329,6 +347,8 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
             let mut router = ::axum::Router::<#context_type>::new();
 
             #(#route_calls)*
+
+            #(#group_calls)*
 
             router = __register_global_middlewares(&global_config, router);
 
@@ -435,6 +455,351 @@ fn generate_route_function(
             #registration
         }
     })
+}
+
+// ============================================================
+// Generate all functions belonging to a root group.
+//
+// This is the entry point for one root group.
+// It recursively walks every nested group and accumulates
+// all generated route/group functions into `functions`.
+// ============================================================
+
+pub(crate) fn generate_group_function(
+    server: &crate::server::Server,
+    group: &crate::group::Group,
+    middlewares: &[Path],
+    functions: &mut Vec<TokenStream2>,
+) -> Result<TokenStream2> {
+    let prefix = crate::expr_to_string(&group.prefix).ok_or(syn::Error::new(
+        Span::call_site(),
+        "prefix must be string expression",
+    ))?;
+
+    let path = vec![prefix];
+
+    let mut current_middlewares =
+        Vec::with_capacity(middlewares.len() + group.middlewares.as_slice().len());
+    current_middlewares.extend_from_slice(&middlewares);
+    current_middlewares.extend_from_slice(&group.middlewares);
+
+    generate_group_member_function(
+        server,
+        &crate::group::GroupMember::Group(Box::new(group.clone())),
+        &current_middlewares,
+        &path,
+        functions,
+    )
+}
+
+// ============================================================
+// Generate one group member.
+//
+// Route:
+//     generates the route function and returns the call.
+//
+// Group:
+//     recursively generates the child group and returns
+//     the child-group call.
+//
+// `functions` is shared through the entire recursion.
+// ============================================================
+
+fn generate_group_member_function(
+    server: &crate::server::Server,
+    member: &crate::group::GroupMember,
+    middlewares: &[Path],
+    path: &[String],
+    functions: &mut Vec<TokenStream2>,
+) -> Result<TokenStream2> {
+    match member {
+        // ----------------------------------------------------
+        // Route
+        // ----------------------------------------------------
+        crate::group::GroupMember::Route(route) => {
+            let function = group_route_function_ident(server, path, route);
+
+            let mut current_middlewares =
+                Vec::with_capacity(middlewares.len() + route.middlewares.as_slice().len());
+            current_middlewares.extend_from_slice(&middlewares);
+            current_middlewares.extend_from_slice(&route.middlewares);
+
+            let route_function = generate_group_route_function(
+                server,
+                route,
+                &current_middlewares,
+                function.clone(),
+            )?;
+
+            functions.push(route_function);
+
+            Ok(quote! {
+                group_router =
+                    #function(group_router);
+            })
+        }
+
+        // ----------------------------------------------------
+        // Nested Group
+        // ----------------------------------------------------
+        crate::group::GroupMember::Group(group) => {
+            let function = group_function_ident(server, path);
+
+            let context_ty = server
+                .body
+                .context
+                .as_ref()
+                .map(|ty| quote!(#ty))
+                .unwrap_or_else(|| quote!(()));
+
+            let config = crate::config::generate_route_config(&group.config);
+
+            let prefix = &group.prefix;
+
+            let mut member_calls = Vec::new();
+
+            // ------------------------------------------------
+            // Recursively process every member.
+            // ------------------------------------------------
+
+            for member in &group.members {
+                let member_path = match member {
+                    crate::group::GroupMember::Route(_) => path.to_vec(),
+
+                    crate::group::GroupMember::Group(child) => {
+                        let child_prefix = crate::expr_to_string(&child.prefix).ok_or(
+                            syn::Error::new(Span::call_site(), "prefix must be string expression"),
+                        )?;
+
+                        let mut child_path = path.to_vec();
+
+                        child_path.push(child_prefix);
+
+                        child_path
+                    }
+                };
+
+                let mut current_middlewares =
+                    Vec::with_capacity(middlewares.len() + group.middlewares.as_slice().len());
+                current_middlewares.extend_from_slice(&middlewares);
+                current_middlewares.extend_from_slice(&group.middlewares);
+
+                let call = generate_group_member_function(
+                    server,
+                    member,
+                    &current_middlewares,
+                    &member_path,
+                    functions,
+                )?;
+
+                member_calls.push(call);
+            }
+
+            // ------------------------------------------------
+            // Generate THIS group's function.
+            //
+            // Notice that this is pushed AFTER recursively
+            // generating its children.
+            // ------------------------------------------------
+
+            functions.push(quote! {
+                pub fn #function(
+                    mut router:
+                        ::axum::Router<#context_ty>,
+                ) -> ::axum::Router<#context_ty> {
+                    #config
+
+                    let mut group_router =
+                        ::axum::Router::<#context_ty>::new();
+
+                    #(#member_calls)*
+
+                    group_router =
+                        __register_global_middlewares(
+                            &config,
+                            group_router,
+                        );
+
+                    router =
+                        router.nest(
+                            #prefix,
+                            group_router,
+                        );
+
+                    router
+                }
+            });
+
+            Ok(quote! {
+                group_router =
+                    #function(group_router);
+            })
+        }
+    }
+}
+
+// group function generation function name
+//
+// Example: __group_app_name_prefix_1
+//
+// `prefix_1` is the prefix of group from `path`, sanitized: where slashes replaced with `-`.
+fn group_function_ident(server: &crate::server::Server, path: &[String]) -> Ident {
+    let mut name = format!("__group_{}", server.name.value());
+
+    for prefix in path {
+        name.push('_');
+        name.push_str(&crate::group::sanitize_prefix(prefix));
+    }
+
+    format_ident!("{}", name)
+}
+
+// group function generation generating functions
+//
+// Example: __route_app_name_prefixes..._handler_name
+fn group_route_function_ident(
+    server: &crate::server::Server,
+    path: &[String],
+    route: &crate::route::Route,
+) -> Ident {
+    let mut name = format!("__route_{}", server.name.value());
+
+    for prefix in path {
+        name.push('_');
+        name.push_str(&crate::group::sanitize_prefix(prefix));
+    }
+
+    let mut handler_name = route.handler.segments.last().unwrap().ident.to_string();
+    if handler_name.contains("unimplemented_handler") {
+        handler_name.push_str("_");
+        handler_name.push_str(&crate::random_6_chars());
+    }
+
+    name.push('_');
+    name.push_str(&handler_name);
+
+    format_ident!("{}", name)
+}
+
+fn generate_group_route_function(
+    server: &crate::server::Server,
+    route: &crate::route::Route,
+    middlewares: &[Path],
+    function_ident: Ident,
+) -> Result<TokenStream2> {
+    let function = function_ident;
+
+    // OPTIONAL context.
+    let context = server.body.context.as_ref();
+
+    let context_ty = context.map(|ty| quote!(#ty)).unwrap_or_else(|| quote!(()));
+
+    let handler = &route.handler;
+
+    // OPTIONAL => Path<()>
+    let path_ty = route
+        .path_params
+        .as_ref()
+        .map(|ty| quote!(#ty))
+        .unwrap_or_else(|| quote!(()));
+
+    // OPTIONAL => Query<()>
+    let query_ty = route
+        .query_params
+        .as_ref()
+        .map(|ty| quote!(#ty))
+        .unwrap_or_else(|| quote!(()));
+
+    // OPTIONAL request body.
+    let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
+
+    let middleware_chain = generate_group_function_middlewares(middlewares, handler);
+
+    let route_response = generate_route_response(route.response_body);
+
+    let method = route.method.method_tokens();
+
+    let response_body_type = format_ident!("{}", route.response_body.to_string());
+
+    let endpoint = &route.endpoint;
+
+    // Route config starts from inherited global
+    // config and overrides only explicitly declared
+    // fields.
+    let route_config = crate::config::generate_route_config(&route.config);
+
+    let registration = generate_route_registration(route.method);
+
+    Ok(quote! {
+        pub fn #function(router: ::axum::Router<#context_ty>) -> ::axum::Router<#context_ty> {
+            // Then override route-specific fields.
+            #route_config
+
+            // Handler + optional middleware chain.
+            #middleware_chain
+
+            let route =
+                g_server::route::Route::<_> {
+                    method: #method,
+                    endpoint: #endpoint,
+                    config,
+                    response_body_type: g_server::route::ResponseBodyType::#response_body_type,
+                    executor,
+                };
+
+            let route_handler = move |
+                ::axum::extract::State(cx):
+                    ::axum::extract::State<#context_ty>,
+
+                headers: ::axum::http::HeaderMap,
+
+                ::axum::extract::Path(path_params):
+                    ::axum::extract::Path<#path_ty>,
+
+                ::axum::extract::Query(query_params):
+                    ::axum::extract::Query<#query_ty>,
+
+                #body_extractor
+            | async move {
+                let req = g_server::Request {
+                    headers,
+                    path_params,
+                    query_params,
+                    body,
+                };
+
+                #route_response
+            };
+
+            #registration
+        }
+    })
+}
+
+fn generate_group_function_middlewares(middlewares: &[Path], handler: &Path) -> TokenStream2 {
+    let mut output = quote! {
+        let executor =
+            g_server::route::Executor::new(
+                #handler
+            );
+    };
+
+    for middleware in middlewares.iter().rev() {
+        output.extend(quote! {
+            let executor =
+                g_server::route::Executor::new(
+                    move |cx, req| {
+                        #middleware(
+                            cx,
+                            req,
+                            executor,
+                        )
+                    }
+                );
+        });
+    }
+
+    output
 }
 
 pub(crate) fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {

@@ -34,6 +34,7 @@ pub(crate) fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> 
     }
 }
 
+#[derive(Clone)]
 pub(crate) enum RequestBody {
     // Json(StructType)
     Json(Type),

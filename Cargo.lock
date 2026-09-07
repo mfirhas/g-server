@@ -578,6 +578,7 @@ dependencies = [
  "criterion",
  "proc-macro2",
  "quote",
+ "rand",
  "reqwest",
  "serde",
  "syn 2.0.119",
