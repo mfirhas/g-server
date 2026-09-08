@@ -52,11 +52,13 @@ async fn id(_: (), req: Request<Path>) -> Result<Response<String>, Response<Stri
     Ok(Response::new().with_text(format!("{}", req.path_params.id)))
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize)]
 struct Path2 {
     user_id: u64,
 }
 
+#[allow(dead_code)]
 async fn id2(_: (), req: Request<Path2>) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text(format!("~ {}", req.path_params.user_id)))
 }
@@ -88,7 +90,7 @@ gserver! {
             handler: id,
         }
 
-        // TODO: fix similar pattern
+        // conflicts
         // get: {
         //     endpoint: "/ping/{user_id}",
         //     path_params: Path2,
