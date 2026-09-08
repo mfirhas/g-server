@@ -1,4 +1,7 @@
-use g_server::{Request, Response, gserver, http::StatusCode};
+use g_server::{
+    Request, Response, gserver,
+    http::{HeaderMap, StatusCode},
+};
 use serde::{Deserialize, Serialize};
 
 async fn ping(_: (), _: Request) -> Result<Response<String>, Response<String>> {
@@ -31,6 +34,15 @@ async fn post(
         }))
 }
 
+async fn put(_: (), _req: Request<(), (), ()>) -> Result<Response<()>, Response<String>> {
+    let mut resp_headers = HeaderMap::new();
+    resp_headers.insert("nganu", 123.into());
+    Err(Response::new()
+        .with_status(StatusCode::CREATED)
+        .with_header(resp_headers)
+        .with_text("error".into()))
+}
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         get: {
@@ -43,6 +55,12 @@ gserver! {
             endpoint: "/post",
             request_body: json(PostRequest),
             handler: post,
+        }
+
+        put: {
+            endpoint: "/baby",
+            handler: put,
+            response_body: empty,
         }
     }
 }
