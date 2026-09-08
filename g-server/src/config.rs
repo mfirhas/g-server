@@ -1,5 +1,5 @@
 /// Server's config
-#[derive(Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     /// Timeout in ms, default 5000 ms
     pub timeout: Option<u64>,
@@ -19,18 +19,7 @@ impl Config {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            timeout: Some(5000),
-            concurrency_limit: Some(100_000),
-            body_limit: Some(10240),
-            compression: Some(Compression::All),
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Compression {
     Deflate,
     Gzip,
