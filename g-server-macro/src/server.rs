@@ -200,12 +200,14 @@ fn validate_routes(server: &crate::server::Server) -> Result<()> {
             if let syn::Lit::Str(endpoint) = &expr.lit {
                 let endpoint_value = endpoint.value();
 
-                let key = (route.method, endpoint_value.clone());
+                let validation_endpoint = normalize_route_endpoint(&endpoint_value);
+
+                let key = (route.method, validation_endpoint.clone());
 
                 if !routes.insert(key) {
                     return Err(syn::Error::new(
                         endpoint.span(),
-                        format!("duplicate route: {} {}", route.method, endpoint_value,),
+                        format!("duplicate route: {} {}", route.method, validation_endpoint,),
                     ));
                 }
             }
@@ -213,6 +215,20 @@ fn validate_routes(server: &crate::server::Server) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn normalize_route_endpoint(endpoint: &str) -> String {
+    endpoint
+        .split('/')
+        .map(|segment| {
+            if segment.starts_with('{') && segment.ends_with('}') {
+                "{...}".to_owned()
+            } else {
+                segment.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
