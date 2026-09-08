@@ -7,9 +7,9 @@ pub(crate) fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> 
     let kind: Ident = input.parse()?;
 
     match kind.to_string().as_str() {
-        "String" => Ok(RequestBody::String),
+        "String" | "string" | "Text" | "text" => Ok(RequestBody::String),
 
-        "Json" => {
+        "Json" | "json" => {
             let body;
             syn::parenthesized!(body in input);
 
@@ -18,7 +18,7 @@ pub(crate) fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> 
             Ok(RequestBody::Json(ty))
         }
 
-        "Form" => {
+        "Form" | "form" => {
             let body;
             syn::parenthesized!(body in input);
 
