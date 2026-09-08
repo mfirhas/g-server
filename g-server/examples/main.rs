@@ -1,4 +1,3 @@
-use axum::routing::{get, post};
 use g_server::*;
 
 use http::StatusCode;
@@ -337,7 +336,7 @@ group: {
 }
 */
 pub fn __group_app_a_prefix_1(mut router: axum::Router<Context>) -> axum::Router<Context> {
-    let mut config = Config::empty();
+    let config = Config::empty();
 
     let mut prefix_1_router = axum::Router::<Context>::new();
     // get
@@ -367,7 +366,7 @@ pub fn __route_app_a_prefix_1_handler_2(router: axum::Router<Context>) -> axum::
 }
 
 pub fn __group_app_a_prefix_1_prefix_2(mut router: axum::Router<Context>) -> axum::Router<Context> {
-    let mut config = Config::empty();
+    let config = Config::empty();
 
     let mut prefix_1_prefix_2_router = axum::Router::<Context>::new();
 
@@ -393,7 +392,7 @@ pub fn __route_app_a_prefix_1_prefix_2_handler1(
 pub fn __group_app_a_prefix_1_prefix_2_prefix_3(
     mut router: axum::Router<Context>,
 ) -> axum::Router<Context> {
-    let mut config = Config::empty();
+    let config = Config::empty();
 
     let mut prefix_1_prefix_2_prefix_3_router = axum::Router::<Context>::new();
 
