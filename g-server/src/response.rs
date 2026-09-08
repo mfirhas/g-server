@@ -133,3 +133,47 @@ where
         resp
     }
 }
+
+impl<T> From<(StatusCode, HeaderMap, T)> for Response<T> {
+    #[inline]
+    fn from((status, headers, body): (StatusCode, HeaderMap, T)) -> Self {
+        Self {
+            status,
+            headers,
+            body,
+        }
+    }
+}
+
+impl<T> From<(StatusCode, (), T)> for Response<T> {
+    #[inline]
+    fn from((status, _, body): (StatusCode, (), T)) -> Self {
+        Self {
+            status,
+            headers: HeaderMap::new(),
+            body,
+        }
+    }
+}
+
+impl<T> From<(StatusCode, T)> for Response<T> {
+    #[inline]
+    fn from((status, body): (StatusCode, T)) -> Self {
+        Self {
+            status,
+            headers: HeaderMap::new(),
+            body,
+        }
+    }
+}
+
+impl From<StatusCode> for Response {
+    #[inline]
+    fn from(status: StatusCode) -> Self {
+        Self {
+            status,
+            headers: HeaderMap::new(),
+            body: (),
+        }
+    }
+}

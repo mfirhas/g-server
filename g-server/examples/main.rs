@@ -91,15 +91,16 @@ pub async fn handler_2(
     cx: Context,
     req: Request<(), (), RequestBody2>,
 ) -> Result<Response<ResponseBody2>, Response<ErrorResponse>> {
-    Ok(Response {
-        status: http::StatusCode::OK,
-        headers: http::HeaderMap::new(),
-        body: ResponseBody2 {
+    Ok((
+        StatusCode::OK,
+        (),
+        ResponseBody2 {
             action: req.body.action,
             token: req.body.token,
             data: cx.data,
         },
-    })
+    )
+        .into())
 }
 
 pub async fn auth<P, Q, ReqB, ResB, F, Fut>(
