@@ -68,7 +68,7 @@ impl Response {
 
 use crate::axum::response::{IntoResponse, Response as AxumResponse};
 
-impl Response {
+impl<T> Response<T> {
     pub fn into_axum_empty(self) -> AxumResponse {
         let mut resp = ().into_response();
 
