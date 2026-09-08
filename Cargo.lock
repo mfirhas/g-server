@@ -577,7 +577,6 @@ dependencies = [
  "quote",
  "rand",
  "reqwest",
- "serde",
  "syn 2.0.119",
  "tokio",
  "tower",
