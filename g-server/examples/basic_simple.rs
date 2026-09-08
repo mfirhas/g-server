@@ -43,6 +43,24 @@ async fn put(_: (), _req: Request<(), (), ()>) -> Result<Response<()>, Response<
         .with_text("error".into()))
 }
 
+#[derive(Deserialize)]
+struct Path {
+    id: u64,
+}
+
+async fn id(_: (), req: Request<Path>) -> Result<Response<String>, Response<String>> {
+    Ok(Response::new().with_text(format!("{}", req.path_params.id)))
+}
+
+#[derive(Deserialize)]
+struct Path2 {
+    user_id: u64,
+}
+
+async fn id2(_: (), req: Request<Path2>) -> Result<Response<String>, Response<String>> {
+    Ok(Response::new().with_text(format!("~ {}", req.path_params.user_id)))
+}
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         get: {
@@ -61,6 +79,28 @@ gserver! {
             endpoint: "/baby",
             handler: put,
             response_body: empty,
+        }
+
+        get: {
+            endpoint: "/ping/{id}",
+            path_params: Path,
+            response_body: text,
+            handler: id,
+        }
+
+        // TODO: fix similar pattern
+        // get: {
+        //     endpoint: "/ping/{user_id}",
+        //     path_params: Path2,
+        //     response_body: text,
+        //     handler: id2,
+        // }
+    }
+
+    http("another_with_handler", "127.0.0.1", 42169) {
+        get: {
+            endpoint: "/ping",
+
         }
     }
 }
