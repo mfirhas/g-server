@@ -9,6 +9,7 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
     let mut config = Vec::new();
     let mut context = None;
     let mut routes = Vec::new();
+    let mut groups = Vec::new();
 
     while !input.is_empty() {
         let key: Ident = input.parse()?;
@@ -37,10 +38,8 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
             // GROUPS are part of the DSL plan but are intentionally
             // not implemented in this route-first implementation yet.
             "group" => {
-                return Err(syn::Error::new(
-                    key.span(),
-                    "`group` is not implemented yet",
-                ));
+                input.parse::<Token![:]>()?;
+                groups.push(crate::group::parse_group(input)?);
             }
 
             // Routes.
@@ -106,6 +105,7 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
         config,
         context,
         routes,
+        groups,
     })
 }
 
@@ -130,6 +130,8 @@ pub(crate) struct ServerBody {
     pub(crate) context: Option<Type>,
 
     pub(crate) routes: Vec<crate::route::Route>,
+
+    pub(crate) groups: Vec<crate::group::Group>,
 }
 
 pub(crate) struct GServer {

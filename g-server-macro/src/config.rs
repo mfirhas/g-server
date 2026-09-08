@@ -104,6 +104,7 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
 /// `value` is from supported value for each config entry.
 ///
 /// This config entry will be mapped into `g_server::Config`.
+#[derive(Clone)]
 pub(crate) struct ConfigEntry {
     pub(crate) name: Ident,
     pub(crate) value: Expr,

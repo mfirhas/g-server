@@ -158,9 +158,10 @@ pub(crate) fn route_function_ident(server: &Server, index: usize) -> Ident {
         .map(|segment| segment.ident.to_string())
         .unwrap_or_else(|| format!("route_{index}"));
 
-    format_ident!("__route_{}_{}", server.name.value(), handler_name)
+    format_ident!("__route_{}_{}_{}", server.name.value(), handler_name, index)
 }
 
+#[derive(Clone)]
 pub(crate) struct Route {
     pub(crate) method: crate::server::HttpMethod,
 

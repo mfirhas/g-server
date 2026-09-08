@@ -2,13 +2,15 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
+use rand::{RngExt, distr::Alphanumeric};
 use syn::{
-    LitInt, LitStr, Result, Token, braced,
+    Expr, LitInt, LitStr, Result, Token, braced,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
 
 mod config;
+mod group;
 mod request_body;
 mod response_body;
 mod route;
@@ -100,4 +102,24 @@ pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub(crate) fn expr_to_string(expr: &Expr) -> Option<String> {
+    if let Expr::Lit(expr) = &expr {
+        if let syn::Lit::Str(prefix) = &expr.lit {
+            Some(prefix.value())
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+pub(crate) fn random_6_chars() -> String {
+    rand::rng()
+        .sample_iter(&Alphanumeric)
+        .take(6)
+        .map(char::from)
+        .collect()
 }
