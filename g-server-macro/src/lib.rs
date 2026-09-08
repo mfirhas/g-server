@@ -123,3 +123,101 @@ pub(crate) fn random_6_chars() -> String {
         .map(char::from)
         .collect()
 }
+
+/// Sanitizes an HTTP route endpoint into a normalized path representation.
+///
+/// Axum performs exact path matching by default, which means visually
+/// equivalent endpoints such as `users`, `/users`, and `/users/` can be
+/// treated differently. This function normalizes common endpoint patterns
+/// before the endpoint is passed to Axum.
+///
+/// The following transformations are performed:
+///
+/// - Adds a leading `/` when the endpoint does not have one.
+/// - Collapses consecutive `/` characters into a single `/`.
+/// - Removes trailing `/` characters, except when the endpoint is `/`.
+/// - Preserves route parameters and other non-slash characters unchanged.
+///
+/// # Examples
+///
+/// ```text
+/// "users"        -> "/users"
+/// "/users"       -> "/users"
+/// "/users/"      -> "/users"
+/// "/users///"    -> "/users"
+/// "/users//:id"  -> "/users/:id"
+/// "//users/:id"  -> "/users/:id"
+/// "/"            -> "/"
+/// ```
+///
+/// # Route Parameters
+///
+/// Route parameters are preserved as-is. For example:
+///
+/// ```text
+/// "/users/:id/"      -> "/users/:id"
+/// "/users/:id/posts" -> "/users/:id/posts"
+/// ```
+///
+/// The function does not attempt to interpret or rewrite route syntax such
+/// as `:id`, wildcards, or other Axum-specific patterns.
+///
+/// # Non-Goals
+///
+/// This function does not:
+///
+/// - URL-decode or URL-encode the endpoint.
+/// - Normalize `.` or `..` path segments.
+/// - Rewrite route parameters.
+/// - Normalize query strings.
+/// - Validate whether the resulting endpoint is a valid Axum route.
+///
+/// It is intended only to perform basic path normalization, while leaving
+/// the actual route syntax and validation to Axum.
+///
+/// # Panics
+///
+/// This function never panics due to the endpoint contents.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(sanitize_endpoint("users"), "/users");
+/// assert_eq!(sanitize_endpoint("/users/"), "/users");
+/// assert_eq!(sanitize_endpoint("/users//:id"), "/users/:id");
+/// assert_eq!(sanitize_endpoint("/"), "/");
+/// ```
+pub(crate) fn sanitize_endpoint(endpoint: &str) -> String {
+    let endpoint = endpoint.trim();
+
+    // Always make the endpoint absolute.
+    let endpoint = if endpoint.starts_with('/') {
+        endpoint.to_owned()
+    } else {
+        format!("/{endpoint}")
+    };
+
+    // Collapse consecutive slashes.
+    let mut sanitized = String::with_capacity(endpoint.len());
+    let mut previous_was_slash = false;
+
+    for c in endpoint.chars() {
+        if c == '/' {
+            if !previous_was_slash {
+                sanitized.push(c);
+            }
+
+            previous_was_slash = true;
+        } else {
+            sanitized.push(c);
+            previous_was_slash = false;
+        }
+    }
+
+    // Normalize trailing slash, except for `/`.
+    if sanitized.len() > 1 {
+        sanitized.truncate(sanitized.trim_end_matches('/').len());
+    }
+
+    sanitized
+}

@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, Span};
 use quote::format_ident;
-use syn::{Expr, Path, Result, Token, Type, braced, parse::ParseStream};
+use syn::{Expr, Path, Result, Token, Type, braced, parse::ParseStream, spanned::Spanned};
 
 use crate::server::Server;
 
@@ -13,7 +13,7 @@ pub(crate) fn parse_route(
     braced!(content in input);
 
     // OPTIONAL fields start with their defaults.
-    let mut endpoint = None;
+    let mut endpoint: Option<Expr> = None;
     let mut config = Vec::new();
     let mut path_params = None;
     let mut query_params = None;
@@ -129,6 +129,13 @@ pub(crate) fn parse_route(
             "route requires mandatory field `endpoint`",
         )
     })?;
+
+    // sanitize endpoint
+    let endpoint = crate::expr_to_string(&endpoint)
+        .and_then(|ref expr_str| {
+            syn::parse_str::<Expr>(&format!("\"{}\"", crate::sanitize_endpoint(expr_str))).ok()
+        })
+        .ok_or_else(|| syn::Error::new(endpoint.span(), "failed sanitizing route endpoint"))?;
 
     let handler = handler.unwrap_or_else(|| {
         syn::parse_quote! {
