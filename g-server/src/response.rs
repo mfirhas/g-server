@@ -1,5 +1,7 @@
 use crate::http::{HeaderMap, StatusCode};
 
+pub type Result<T, E> = std::result::Result<Response<T>, Response<E>>;
+
 #[derive(Debug, Clone)]
 pub struct Response<Body = ()> {
     pub status: StatusCode,

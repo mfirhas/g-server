@@ -16,7 +16,7 @@ mod request;
 pub use request::{Request, multipart};
 
 mod response;
-pub use response::Response;
+pub use response::{Response, Result};
 
 pub mod route;
 
