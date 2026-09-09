@@ -141,6 +141,7 @@ pub(crate) fn random_6_chars() -> String {
 /// # Examples
 ///
 /// ```text
+/// ""             -> "/"
 /// "users"        -> "/users"
 /// "/users"       -> "/users"
 /// "/users/"      -> "/users"
@@ -189,6 +190,10 @@ pub(crate) fn random_6_chars() -> String {
 /// ```
 pub(crate) fn sanitize_endpoint(endpoint: &str) -> String {
     let endpoint = endpoint.trim();
+
+    if endpoint.is_empty() {
+        return "/".into();
+    }
 
     // Always make the endpoint absolute.
     let endpoint = if endpoint.starts_with('/') {
