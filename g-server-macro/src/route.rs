@@ -2,7 +2,7 @@ use proc_macro2::{Ident, Span};
 use quote::format_ident;
 use syn::{Expr, Path, Result, Token, Type, braced, parse::ParseStream, spanned::Spanned};
 
-use crate::server::Server;
+use crate::server::{HttpMethod, Server};
 
 pub(crate) fn parse_route(
     input: ParseStream<'_>,
@@ -98,7 +98,7 @@ pub(crate) fn parse_route(
             "handler" => {
                 content.parse::<Token![:]>()?;
 
-                handler = Some(content.parse()?);
+                handler = Some(parse_route_handler(&content)?);
             }
 
             // OPTIONAL.
@@ -138,9 +138,9 @@ pub(crate) fn parse_route(
         .ok_or_else(|| syn::Error::new(endpoint.span(), "failed sanitizing route endpoint"))?;
 
     let handler = handler.unwrap_or_else(|| {
-        syn::parse_quote! {
+        RouteHandler::Path(syn::parse_quote! {
             g_server::route::unimplemented_handler
-        }
+        })
     });
 
     Ok(Route {
@@ -157,15 +157,47 @@ pub(crate) fn parse_route(
 }
 
 pub(crate) fn route_function_ident(server: &Server, index: usize) -> Ident {
-    let handler_name = server
-        .body
-        .routes
-        .get(index)
-        .and_then(|route| route.handler.segments.last())
-        .map(|segment| segment.ident.to_string())
-        .unwrap_or_else(|| format!("route_{index}"));
+    let route = server.body.routes.get(index);
 
-    format_ident!("__route_{}_{}_{}", server.name.value(), handler_name, index)
+    if let Some(r) = route {
+        match r.handler {
+            RouteHandler::Path(ref path) => path.segments.last().map_or(
+                format_ident!("__route_{}_{}", server.name.value(), index),
+                |last| {
+                    format_ident!(
+                        "__route_{}_{}_{}",
+                        server.name.value(),
+                        last.ident.to_string(),
+                        index
+                    )
+                },
+            ),
+            RouteHandler::Closure(_) => {
+                let endpoint_str =
+                    crate::expr_to_string(&r.endpoint).expect("endpoint must be a string");
+                format_ident!(
+                    "__route_{}_{}_{}",
+                    server.name.value(),
+                    endpoint_to_function_name_segment(&r.method, &endpoint_str),
+                    index
+                )
+            }
+        }
+    } else {
+        return format_ident!("__route_{}_{}", server.name.value(), index);
+    }
+}
+
+fn endpoint_to_function_name_segment(verb: &HttpMethod, endpoint: &str) -> String {
+    let endpoint_str: String = endpoint
+        .chars()
+        .map(|c| match c {
+            '/' | '-' | '{' | '}' | ':' => '_',
+            other => other,
+        })
+        .collect();
+
+    format!("{}_{}", verb, endpoint_str)
 }
 
 #[derive(Clone)]
@@ -201,9 +233,32 @@ pub(crate) struct Route {
     pub(crate) middlewares: Vec<Path>,
 
     // MANDATORY.
-    pub(crate) handler: Path,
+    pub(crate) handler: RouteHandler,
 
     // OPTIONAL.
     // Defaults to Json.
     pub(crate) response_body: crate::response_body::ResponseBody,
+}
+
+#[derive(Clone)]
+pub(crate) enum RouteHandler {
+    Path(syn::Path),
+    Closure(syn::ExprClosure),
+}
+
+fn parse_route_handler(input: ParseStream<'_>) -> Result<RouteHandler> {
+    let expr: syn::Expr = input.parse()?;
+
+    let handler = match expr {
+        syn::Expr::Path(expr) => RouteHandler::Path(expr.path),
+        syn::Expr::Closure(expr) => RouteHandler::Closure(expr),
+        expr => {
+            return Err(syn::Error::new_spanned(
+                expr,
+                "expected a handler path or closure",
+            ));
+        }
+    };
+
+    Ok(handler)
 }

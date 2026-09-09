@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::http::{HeaderMap, StatusCode};
 
 pub type Result<T, E> = std::result::Result<Response<T>, Response<E>>;
@@ -82,9 +84,12 @@ impl<T> Response<T> {
     }
 }
 
-impl Response<String> {
+impl<S> Response<S>
+where
+    S: Display,
+{
     pub fn into_axum_string(self) -> AxumResponse {
-        let mut resp = self.body.into_response();
+        let mut resp = self.body.to_string().into_response();
 
         *resp.status_mut() = self.status;
 
@@ -99,7 +104,7 @@ impl Response<String> {
     }
 
     pub fn into_axum_html(self) -> AxumResponse {
-        let mut resp = crate::axum::response::Html(self.body).into_response();
+        let mut resp = crate::axum::response::Html(self.body.to_string()).into_response();
 
         *resp.status_mut() = self.status;
 

@@ -66,6 +66,12 @@ async fn id2(_: (), req: Request<Path2>) -> Result<Response<String>, Response<St
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         get: {
+            endpoint: "/",
+            response_body: text,
+            handler: |_, _| g_server::Result::<_,String>::Ok((StatusCode::OK, "OK").into()),
+        }
+
+        get: {
             endpoint: "/ping",
             handler: ping,
             response_body: text,

@@ -422,7 +422,19 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
     // if user supply any config, we define them here:
     // global_config.timeout = // user defined timeout from macro
     // ...
-    let executor = route::Executor::new(handler_1);
+    let executor =
+        route::Executor::new(async move |cx: Context, req: Request<_, _, RequestBody>| {
+            Ok((
+                StatusCode::OK,
+                (),
+                ResponseBody2 {
+                    action: req.body.action,
+                    token: req.body.token,
+                    data: cx.data,
+                },
+            )
+                .into())
+        });
     // We assemble middlewares from last to first: first in array execute first, so we declare last here to make it executed first.
     // We assemble these middlewares directly from macro declaration.
     // If no middlewares, straight to route.

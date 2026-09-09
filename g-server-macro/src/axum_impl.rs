@@ -2,7 +2,7 @@ use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{Path, Result};
 
-use crate::request_body::RequestBody;
+use crate::{request_body::RequestBody, route::RouteHandler};
 
 pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
     // --------------------------------------------------------
@@ -744,11 +744,27 @@ fn group_route_function_ident(
         name.push_str(&crate::group::sanitize_prefix(prefix));
     }
 
-    let mut handler_name = route.handler.segments.last().unwrap().ident.to_string();
-    if handler_name.contains("unimplemented_handler") {
-        handler_name.push_str("_");
-        handler_name.push_str(&crate::random_6_chars());
-    }
+    let handler_name = match route.handler {
+        crate::route::RouteHandler::Path(ref path)
+            if path
+                .segments
+                .last()
+                .unwrap()
+                .ident
+                .to_string()
+                .contains("unimplemented_handler") =>
+        {
+            format!(
+                "{}_{}",
+                path.segments.last().unwrap().ident.to_string(),
+                &crate::random_6_chars()
+            )
+        }
+        crate::route::RouteHandler::Path(ref path) => {
+            path.segments.last().unwrap().ident.to_string()
+        }
+        crate::route::RouteHandler::Closure(_) => crate::random_6_chars(),
+    };
 
     name.push('_');
     name.push_str(&handler_name);
@@ -851,12 +867,23 @@ fn generate_group_route_function(
     })
 }
 
-fn generate_group_function_middlewares(middlewares: &[Path], handler: &Path) -> TokenStream2 {
-    let mut output = quote! {
-        let executor =
-            g_server::route::Executor::new(
-                #handler
-            );
+fn generate_group_function_middlewares(
+    middlewares: &[Path],
+    handler: &RouteHandler,
+) -> TokenStream2 {
+    let mut output = match handler {
+        RouteHandler::Path(handler) => quote! {
+            let executor =
+                g_server::route::Executor::new(
+                    #handler
+                );
+        },
+        RouteHandler::Closure(closure) => quote! {
+            let executor =
+                g_server::route::Executor::new(
+                    async move #closure
+                );
+        },
     };
 
     for middleware in middlewares.iter().rev() {
@@ -923,7 +950,7 @@ pub(crate) fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream
 // Middleware chain
 // ============================================================
 
-fn generate_middleware_chain(route: &crate::route::Route, handler: &Path) -> TokenStream2 {
+fn generate_middleware_chain(route: &crate::route::Route, handler: &RouteHandler) -> TokenStream2 {
     // No middleware:
     //
     // Executor::new(handler)
@@ -940,11 +967,19 @@ fn generate_middleware_chain(route: &crate::route::Route, handler: &Path) -> Tok
     //
     // Therefore declarations are wrapped in reverse order.
 
-    let mut output = quote! {
-        let executor =
-            g_server::route::Executor::new(
-                #handler
-            );
+    let mut output = match handler {
+        RouteHandler::Path(handler) => quote! {
+            let executor =
+                g_server::route::Executor::new(
+                    #handler
+                );
+        },
+        RouteHandler::Closure(closure) => quote! {
+            let executor =
+                g_server::route::Executor::new(
+                    async move #closure
+                );
+        },
     };
 
     for middleware in route.middlewares.iter().rev() {
