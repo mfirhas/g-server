@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, Span};
-use syn::{Expr, Path, Result, Token, braced, parse::ParseStream};
+use syn::{Expr, Path, Result, Token, braced, parse::ParseStream, spanned::Spanned};
 
 use crate::{route::Route, server::HttpMethod};
 
@@ -67,6 +67,13 @@ pub(crate) fn parse_group(input: ParseStream<'_>) -> Result<Group> {
     let prefix = prefix.ok_or_else(|| {
         syn::Error::new(Span::call_site(), "group requires mandatory field `prefix`")
     })?;
+
+    // sanitize prefix
+    let prefix = crate::expr_to_string(&prefix)
+        .and_then(|ref expr_str| {
+            syn::parse_str::<Expr>(&format!("\"{}\"", crate::sanitize_endpoint(expr_str))).ok()
+        })
+        .ok_or_else(|| syn::Error::new(prefix.span(), "failed sanitizing group prefix"))?;
 
     if members.is_empty() {
         return Err(syn::Error::new(
