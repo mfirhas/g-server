@@ -226,3 +226,64 @@ pub(crate) fn sanitize_endpoint(endpoint: &str) -> String {
 
     sanitized
 }
+
+#[cfg(test)]
+mod sanitize_endpoint_tests {
+    use super::sanitize_endpoint;
+
+    #[test]
+    fn sanitize_endpoint_empty() {
+        assert_eq!(sanitize_endpoint(""), "/");
+        assert_eq!(sanitize_endpoint("   "), "/");
+    }
+
+    #[test]
+    fn sanitize_endpoint_makes_path_absolute() {
+        assert_eq!(sanitize_endpoint("ping"), "/ping");
+        assert_eq!(sanitize_endpoint("ping/foo"), "/ping/foo");
+    }
+
+    #[test]
+    fn sanitize_endpoint_preserves_absolute_path() {
+        assert_eq!(sanitize_endpoint("/ping"), "/ping");
+        assert_eq!(sanitize_endpoint("/ping/foo"), "/ping/foo");
+    }
+
+    #[test]
+    fn sanitize_endpoint_trims_whitespace() {
+        assert_eq!(sanitize_endpoint("  /ping  "), "/ping");
+        assert_eq!(sanitize_endpoint("\t/ping/foo\n"), "/ping/foo");
+    }
+
+    #[test]
+    fn sanitize_endpoint_collapses_consecutive_slashes() {
+        assert_eq!(sanitize_endpoint("//ping"), "/ping");
+        assert_eq!(sanitize_endpoint("///ping"), "/ping");
+        assert_eq!(sanitize_endpoint("/ping//foo"), "/ping/foo");
+        assert_eq!(sanitize_endpoint("/ping///foo"), "/ping/foo");
+        assert_eq!(sanitize_endpoint("/ping//foo///bar"), "/ping/foo/bar");
+    }
+
+    #[test]
+    fn sanitize_endpoint_normalizes_trailing_slash() {
+        assert_eq!(sanitize_endpoint("/ping/"), "/ping");
+        assert_eq!(sanitize_endpoint("/ping//"), "/ping");
+        assert_eq!(sanitize_endpoint("/ping///"), "/ping");
+        assert_eq!(sanitize_endpoint("/ping/foo/"), "/ping/foo");
+        assert_eq!(sanitize_endpoint("/ping/foo///"), "/ping/foo");
+    }
+
+    #[test]
+    fn sanitize_endpoint_preserves_root() {
+        assert_eq!(sanitize_endpoint("/"), "/");
+        assert_eq!(sanitize_endpoint("//"), "/");
+        assert_eq!(sanitize_endpoint("///"), "/");
+    }
+
+    #[test]
+    fn sanitize_endpoint_handles_combined_normalization() {
+        assert_eq!(sanitize_endpoint(" //ping//foo/// "), "/ping/foo");
+        assert_eq!(sanitize_endpoint("ping//foo///bar//"), "/ping/foo/bar");
+        assert_eq!(sanitize_endpoint("///ping///foo///"), "/ping/foo");
+    }
+}
