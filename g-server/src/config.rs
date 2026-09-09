@@ -9,6 +9,8 @@ pub struct Config {
     pub body_limit: Option<usize>,
     /// Response body compression method: default all
     pub compression: Option<Compression>,
+    /// Remove repeated slash(es)
+    pub normalize_endpoint: Option<bool>,
 }
 
 impl Config {

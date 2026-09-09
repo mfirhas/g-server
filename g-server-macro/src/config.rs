@@ -117,6 +117,7 @@ impl ConfigEntry {
             "concurrency_limit" => Self::validate_integer(&value),
             "body_limit" => Self::validate_integer(&value),
             "compression" => Self::validate_compression(&mut value),
+            "normalize_endpoint" => Self::validate_bool(&value),
 
             _ => Err(syn::Error::new(
                 name.span(),
@@ -143,6 +144,14 @@ impl ConfigEntry {
         *value = syn::parse2(quote! { g_server::Compression::#c_ident })?;
 
         Ok(())
+    }
+
+    fn validate_bool(value: &Expr) -> Result<()> {
+        match value {
+            Expr::Lit(expr) if matches!(&expr.lit, syn::Lit::Bool(_)) => Ok(()),
+
+            _ => Err(syn::Error::new(value.span(), "expects a boolean")),
+        }
     }
 }
 

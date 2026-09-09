@@ -32,6 +32,9 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
     // route infra middlewares configs
     let route_infra_mw = generate_route_infra_middlewares();
 
+    // custom middlewares
+    let norm_endpoint_mw = normalize_endpoint_middleware();
+
     let initializers = servers
         .iter()
         .map(|server| generate_init_function(server))
@@ -61,6 +64,8 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         #global_infra_mw
 
         #route_infra_mw
+
+        #norm_endpoint_mw
 
         #(#initializers)*
 
@@ -172,25 +177,6 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
         where
             C: Clone + Send + Sync + 'static,
         {
-            if let Some(ms) = global_config.timeout {
-                router = router.layer(
-                    g_server::tower::ServiceBuilder::new()
-                        .layer(g_server::axum::error_handling::HandleErrorLayer::new(
-                            |err: g_server::tower::BoxError| async move {
-                                (g_server::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
-                            },
-                        ))
-                        .layer(g_server::tower::timeout::TimeoutLayer::new(
-                            g_server::tokio::time::Duration::from_millis(ms),
-                        )),
-                );
-            }
-            if let Some(n) = global_config.concurrency_limit {
-                router = router.layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
-            }
-            if let Some(kib) = global_config.body_limit {
-                router = router.layer(g_server::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
-            }
             if let Some(c) = global_config.compression {
                 router = router.layer(match c {
                     g_server::Compression::All => g_server::tower_http::compression::CompressionLayer::new(),
@@ -212,6 +198,35 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                         .no_zstd(),
                 });
             }
+
+            if let Some(kib) = global_config.body_limit {
+                router = router.layer(g_server::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+            }
+
+            if let Some(n) = global_config.concurrency_limit {
+                router = router.layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
+            }
+
+            if let Some(ms) = global_config.timeout {
+                router = router.layer(
+                    g_server::tower::ServiceBuilder::new()
+                        .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                            |err: g_server::tower::BoxError| async move {
+                                (g_server::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
+                            },
+                        ))
+                        .layer(g_server::tower::timeout::TimeoutLayer::new(
+                            g_server::tokio::time::Duration::from_millis(ms),
+                        )),
+                );
+            }
+
+            if let Some(normalize_endpoint) = global_config.normalize_endpoint && normalize_endpoint {
+                router = router.layer(
+                    g_server::axum::middleware::from_fn(normalize_endpoint_middleware)
+                )
+            }
+
             router
         }
     }
@@ -226,25 +241,6 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
         where
             C: Clone + Send + Sync + 'static,
         {
-            if let Some(ms) = config.timeout {
-                router = router.route_layer(
-                    g_server::tower::ServiceBuilder::new()
-                        .layer(g_server::axum::error_handling::HandleErrorLayer::new(
-                            |err: g_server::tower::BoxError| async move {
-                                (g_server::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
-                            },
-                        ))
-                        .layer(g_server::tower::timeout::TimeoutLayer::new(
-                            g_server::tokio::time::Duration::from_millis(ms),
-                        )),
-                );
-            }
-            if let Some(n) = config.concurrency_limit {
-                router = router.route_layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
-            }
-            if let Some(kib) = config.body_limit {
-                router = router.route_layer(g_server::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
-            }
             if let Some(c) = config.compression {
                 router = router.route_layer(match c {
                     g_server::Compression::All => g_server::tower_http::compression::CompressionLayer::new(),
@@ -266,7 +262,83 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                         .no_zstd(),
                 });
             }
+
+            if let Some(kib) = config.body_limit {
+                router = router.route_layer(g_server::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+            }
+
+            if let Some(n) = config.concurrency_limit {
+                router = router.route_layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
+            }
+
+            if let Some(ms) = config.timeout {
+                router = router.route_layer(
+                    g_server::tower::ServiceBuilder::new()
+                        .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                            |err: g_server::tower::BoxError| async move {
+                                (g_server::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
+                            },
+                        ))
+                        .layer(g_server::tower::timeout::TimeoutLayer::new(
+                            g_server::tokio::time::Duration::from_millis(ms),
+                        )),
+                );
+            }
+
+            if let Some(normalize_endpoint) = config.normalize_endpoint && normalize_endpoint {
+                router = router.route_layer(
+                    g_server::axum::middleware::from_fn(normalize_endpoint_middleware)
+                )
+            }
+
             router
+        }
+    }
+}
+
+// ============================================================
+// custom axum middlewares
+// ============================================================
+fn normalize_endpoint_middleware() -> TokenStream2 {
+    quote! {
+        pub(crate) async fn normalize_endpoint_middleware(
+            request: g_server::axum::extract::Request,
+            next: g_server::axum::middleware::Next,
+        ) -> g_server::axum::response::Response {
+            let path = request.uri().path();
+
+            if path == "/" || (!path.ends_with('/') && !path.contains("//")) {
+                return next.run(request).await;
+            }
+
+            let query_len = request.uri().query().map_or(0, |q| q.len() + 1);
+            let mut normalized = String::with_capacity(path.len() + query_len);
+            let mut prev_was_slash = false;
+
+            for ch in path.chars() {
+                if ch == '/' {
+                    if prev_was_slash {
+                        continue;
+                    }
+                    prev_was_slash = true;
+                } else {
+                    prev_was_slash = false;
+                }
+                normalized.push(ch);
+            }
+
+            // At most one trailing slash can remain after collapsing, so a single
+            // pop is enough — and we never strip the root "/".
+            if normalized.len() > 1 && normalized.ends_with('/') {
+                normalized.pop();
+            }
+
+            if let Some(query) = request.uri().query() {
+                normalized.push('?');
+                normalized.push_str(query);
+            }
+
+            g_server::axum::response::Redirect::permanent(&normalized).into_response()
         }
     }
 }
