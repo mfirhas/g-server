@@ -5,7 +5,7 @@ pub struct Config {
     pub timeout: Option<u64>,
     /// Max concurrent requests
     pub concurrency_limit: Option<usize>,
-    /// Request body limit in KiB, default: 10240 KiB
+    /// Request body limit in bytes, default: 2 MiB
     pub body_limit: Option<usize>,
     /// Response body compression method: default all
     pub compression: Option<Compression>,

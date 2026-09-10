@@ -233,8 +233,8 @@ where
     if let Some(n) = global_config.concurrency_limit {
         router = router.layer(::tower::limit::ConcurrencyLimitLayer::new(n));
     }
-    if let Some(kib) = global_config.body_limit {
-        router = router.layer(::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+    if let Some(bytes) = global_config.body_limit {
+        router = router.layer(::axum::extract::DefaultBodyLimit::max(bytes));
     }
     if let Some(c) = global_config.compression {
         router = router.layer(match c {
@@ -283,8 +283,8 @@ where
     if let Some(n) = config.concurrency_limit {
         router = router.route_layer(::tower::limit::ConcurrencyLimitLayer::new(n));
     }
-    if let Some(kib) = config.body_limit {
-        router = router.route_layer(::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+    if let Some(bytes) = config.body_limit {
+        router = router.route_layer(::axum::extract::DefaultBodyLimit::max(bytes));
     }
     if let Some(c) = config.compression {
         router = router.route_layer(match c {

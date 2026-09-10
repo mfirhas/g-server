@@ -199,8 +199,8 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 });
             }
 
-            if let Some(kib) = global_config.body_limit {
-                router = router.layer(g_server::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+            if let Some(bytes) = global_config.body_limit {
+                router = router.layer(g_server::axum::extract::DefaultBodyLimit::max(bytes));
             }
 
             if let Some(n) = global_config.concurrency_limit {
@@ -263,8 +263,8 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 });
             }
 
-            if let Some(kib) = config.body_limit {
-                router = router.route_layer(g_server::tower_http::limit::RequestBodyLimitLayer::new(kib * 1024));
+            if let Some(bytes) = config.body_limit {
+                router = router.route_layer(g_server::axum::extract::DefaultBodyLimit::max(bytes));
             }
 
             if let Some(n) = config.concurrency_limit {
