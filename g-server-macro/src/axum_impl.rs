@@ -212,7 +212,7 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                     g_server::tower::ServiceBuilder::new()
                         .layer(g_server::axum::error_handling::HandleErrorLayer::new(
                             |err: g_server::tower::BoxError| async move {
-                                (g_server::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
+                                (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string())
                             },
                         ))
                         .layer(g_server::tower::timeout::TimeoutLayer::new(
@@ -276,7 +276,7 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                     g_server::tower::ServiceBuilder::new()
                         .layer(g_server::axum::error_handling::HandleErrorLayer::new(
                             |err: g_server::tower::BoxError| async move {
-                                (g_server::http::StatusCode::REQUEST_TIMEOUT, err.to_string())
+                                (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string())
                             },
                         ))
                         .layer(g_server::tower::timeout::TimeoutLayer::new(
