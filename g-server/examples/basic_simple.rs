@@ -65,6 +65,9 @@ async fn id2(_: (), req: Request<Path2>) -> Result<Response<String>, Response<St
 
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
+        config: {
+            normalize_endpoint: true,
+        }
         get: {
             endpoint: "/",
             response_body: text,
@@ -77,11 +80,16 @@ gserver! {
             response_body: text,
         },
 
-        post: {
-            endpoint: "/post",
-            request_body: json(PostRequest),
-            handler: post,
-        }
+        group: {
+            prefix: "/v1",
+            members: [
+                post: {
+                    endpoint: "/post",
+                    request_body: json(PostRequest),
+                    handler: post,
+                }
+            ],
+        },
 
         put: {
             endpoint: "/baby",

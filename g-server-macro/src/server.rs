@@ -5,6 +5,9 @@ use quote::format_ident;
 use quote::quote;
 use syn::{Expr, LitInt, LitStr, Result, Token, Type, braced, parse::ParseStream};
 
+use crate::config::ConfigEntry;
+use crate::group::GroupMember;
+
 pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
     let mut config = Vec::new();
     let mut context = None;
@@ -184,8 +187,52 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
         // HTTP-specific validation.
         // ----------------------------------------------------
 
+        validate_http_server_configs(server)?;
+
         if matches!(server.kind, crate::server::ServerKind::Http) {
             validate_routes(server)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_http_server_configs(server: &crate::server::Server) -> Result<()> {
+    if let ServerKind::Http = server.kind {
+        let server_body = &server.body;
+
+        for route in server_body.routes.iter() {
+            validate_non_global_configs(&route.config)?;
+        }
+
+        for group in server_body.groups.iter() {
+            validate_group_configs(group)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_group_configs(group: &crate::group::Group) -> Result<()> {
+    validate_non_global_configs(&group.config)?;
+
+    for member in group.members.iter() {
+        match member {
+            GroupMember::Route(route) => validate_non_global_configs(&route.config)?,
+            GroupMember::Group(group) => validate_group_configs(group)?,
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_non_global_configs(configs: &[ConfigEntry]) -> Result<()> {
+    for cfg in configs {
+        let ident_name = cfg.name.to_string();
+        if ident_name == "normalize_endpoint" {
+            return Err(syn::Error::new(
+                cfg.name.span(),
+                "`normalize_endpoint` only allowed for global config",
+            ));
         }
     }
 
