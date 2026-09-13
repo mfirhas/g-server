@@ -504,6 +504,7 @@ fn generate_route_function(
                 };
 
             let route_handler = move |
+                method: g_server::http::Method,
                 g_server::axum::extract::State(cx):
                     g_server::axum::extract::State<#context_ty>,
 
@@ -518,6 +519,7 @@ fn generate_route_function(
                 #body_extractor
             | async move {
                 let req = g_server::Request {
+                    method: method.into(),
                     headers,
                     path_params,
                     query_params,
@@ -839,6 +841,7 @@ fn generate_group_route_function(
                 };
 
             let route_handler = move |
+                method: g_server::http::Method,
                 g_server::axum::extract::State(cx):
                     g_server::axum::extract::State<#context_ty>,
 
@@ -853,6 +856,7 @@ fn generate_group_route_function(
                 #body_extractor
             | async move {
                 let req = g_server::Request {
+                    method: method.into(),
                     headers,
                     path_params,
                     query_params,

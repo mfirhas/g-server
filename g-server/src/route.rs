@@ -6,15 +6,38 @@ pub type Middleware<F, C, P, Q, ReqB, Fut> =
     fn(cx: C, req: Request<P, Q, ReqB>, ex: Executor<F>) -> Fut;
 
 /// Http methods supported.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpMethod {
-    Head,
     Get,
-    Put,
     Post,
+    Put,
     Patch,
+    Delete,
+    Options,
+    Head,
+    Trace,
     Query,
+    Connect,
     Any,
+}
+
+impl From<crate::http::Method> for HttpMethod {
+    #[inline]
+    fn from(value: crate::http::Method) -> Self {
+        match value {
+            crate::http::Method::HEAD => Self::Head,
+            crate::http::Method::GET => Self::Get,
+            crate::http::Method::POST => Self::Post,
+            crate::http::Method::PUT => Self::Put,
+            crate::http::Method::PATCH => Self::Patch,
+            crate::http::Method::DELETE => Self::Delete,
+            crate::http::Method::OPTIONS => Self::Options,
+            crate::http::Method::TRACE => Self::Trace,
+            crate::http::Method::QUERY => Self::Query,
+            crate::http::Method::CONNECT => Self::Connect,
+            _ => Self::Any,
+        }
+    }
 }
 
 /// Response body supported.

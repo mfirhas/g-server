@@ -19,6 +19,7 @@ mod response;
 pub use response::{Response, Result};
 
 pub mod route;
+pub use route::HttpMethod;
 
 mod server;
 pub use server::Server;

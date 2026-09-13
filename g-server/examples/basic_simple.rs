@@ -8,7 +8,7 @@ async fn ping(_: (), _: Request) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text("pong".into()))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct PostRequest {
     user_id: u64,
     user_name: String,
@@ -25,6 +25,7 @@ async fn post(
     _: (),
     req: Request<(), (), PostRequest>,
 ) -> Result<Response<PostResponse>, Response<String>> {
+    dbg!(&req);
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     Ok(Response::new()
         .with_status(StatusCode::CREATED)
@@ -84,7 +85,7 @@ gserver! {
         group: {
             prefix: "/v1",
             members: [
-                post: {
+                any: {
                     endpoint: "/post",
                     request_body: json(PostRequest),
                     handler: post,

@@ -1,7 +1,8 @@
-use crate::http::HeaderMap;
+use crate::{HttpMethod, http::HeaderMap};
 
 #[derive(Debug, Clone)]
 pub struct Request<PathParams = (), QueryParams = (), Body = ()> {
+    pub method: HttpMethod,
     pub headers: HeaderMap,
     pub path_params: PathParams,
     pub query_params: QueryParams,

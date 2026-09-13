@@ -457,6 +457,7 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
           axum::extract::Json(body): axum::extract::Json<RequestBody>, // `RequestBody` comes from macro, if omitted becomes ()
     | async move {
         let req = Request {
+            method: HttpMethod::Get,
             headers,
             path_params,
             query_params,
@@ -504,6 +505,26 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
             route.endpoint,
             __register_route_middlewares(&route.config, axum::routing::any(route_handler)),
         ),
+
+        route::HttpMethod::Delete => router.route(
+            route.endpoint,
+            __register_route_middlewares(&route.config, axum::routing::delete(route_handler)),
+        ),
+
+        route::HttpMethod::Options => router.route(
+            route.endpoint,
+            __register_route_middlewares(&route.config, axum::routing::options(route_handler)),
+        ),
+
+        route::HttpMethod::Trace => router.route(
+            route.endpoint,
+            __register_route_middlewares(&route.config, axum::routing::trace(route_handler)),
+        ),
+
+        route::HttpMethod::Connect => router.route(
+            route.endpoint,
+            __register_route_middlewares(&route.config, axum::routing::connect(route_handler)),
+        ),
     };
 
     router
@@ -536,6 +557,7 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
               axum::extract::Query(query_params): axum::extract::Query<()>,
               axum::extract::Json(body): axum::extract::Json<RequestBody2>| async move {
             let req = Request {
+                method: HttpMethod::Post,
                 headers,
                 path_params,
                 query_params,
@@ -564,6 +586,22 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
         route::HttpMethod::Query => router.route(route.endpoint, axum::routing::get(route_handler)),
 
         route::HttpMethod::Any => router.route(route.endpoint, axum::routing::any(route_handler)),
+
+        route::HttpMethod::Delete => {
+            router.route(route.endpoint, axum::routing::delete(route_handler))
+        }
+
+        route::HttpMethod::Options => {
+            router.route(route.endpoint, axum::routing::options(route_handler))
+        }
+
+        route::HttpMethod::Trace => {
+            router.route(route.endpoint, axum::routing::trace(route_handler))
+        }
+
+        route::HttpMethod::Connect => {
+            router.route(route.endpoint, axum::routing::connect(route_handler))
+        }
     };
 
     router
