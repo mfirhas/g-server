@@ -25,6 +25,7 @@ async fn post(
     _: (),
     req: Request<(), (), PostRequest>,
 ) -> Result<Response<PostResponse>, Response<String>> {
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     Ok(Response::new()
         .with_status(StatusCode::CREATED)
         .with_json(PostResponse {
@@ -90,6 +91,12 @@ gserver! {
                 }
             ],
         },
+
+        post: {
+            endpoint: "/post",
+            request_body: json(PostRequest),
+            handler: post,
+        }
 
         put: {
             endpoint: "/baby",
