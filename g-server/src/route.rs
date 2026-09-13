@@ -58,6 +58,7 @@ pub struct Executor<F> {
 }
 
 impl<F> Executor<F> {
+    #[inline]
     pub fn new<C, P, Q, ReqB, ResB, ErrB, Fut>(func: F) -> Self
     where
         F: FnOnce(C, Request<P, Q, ReqB>) -> Fut,
@@ -67,6 +68,7 @@ impl<F> Executor<F> {
         Self { func }
     }
 
+    #[inline]
     pub async fn exec<C, P, Q, ReqB, ResB, ErrB, Fut>(
         self,
         cx: C,
