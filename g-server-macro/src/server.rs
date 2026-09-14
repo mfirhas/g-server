@@ -189,9 +189,7 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
 
         validate_http_server_configs(server)?;
 
-        if matches!(server.kind, crate::server::ServerKind::Http) {
-            validate_routes(server)?;
-        }
+        validate_http_routes(server)?;
     }
 
     Ok(())
@@ -242,23 +240,25 @@ fn validate_non_global_configs(configs: &[ConfigEntry]) -> Result<()> {
     Ok(())
 }
 
-fn validate_routes(server: &crate::server::Server) -> Result<()> {
-    let mut routes = HashSet::new();
+fn validate_http_routes(server: &crate::server::Server) -> Result<()> {
+    if let ServerKind::Http = server.kind {
+        let mut routes = HashSet::new();
 
-    for route in &server.body.routes {
-        if let Expr::Lit(expr) = &route.endpoint {
-            if let syn::Lit::Str(endpoint) = &expr.lit {
-                let endpoint_value = endpoint.value();
+        for route in &server.body.routes {
+            if let Expr::Lit(expr) = &route.endpoint {
+                if let syn::Lit::Str(endpoint) = &expr.lit {
+                    let endpoint_value = endpoint.value();
 
-                let validation_endpoint = normalize_route_endpoint(&endpoint_value);
+                    let validation_endpoint = normalize_route_endpoint(&endpoint_value);
 
-                let key = (route.method, validation_endpoint.clone());
+                    let key = (route.method, validation_endpoint.clone());
 
-                if !routes.insert(key) {
-                    return Err(syn::Error::new(
-                        endpoint.span(),
-                        format!("duplicate route: {} {}", route.method, validation_endpoint,),
-                    ));
+                    if !routes.insert(key) {
+                        return Err(syn::Error::new(
+                            endpoint.span(),
+                            format!("duplicate route: {} {}", route.method, validation_endpoint,),
+                        ));
+                    }
                 }
             }
         }
