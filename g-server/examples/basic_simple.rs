@@ -8,32 +8,34 @@ async fn ping(_: (), _: Request) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text("pong".into()))
 }
 
-#[derive(Debug, Deserialize)]
-struct PostRequest {
-    user_id: u64,
-    user_name: String,
-}
+mod p {
+    use super::*;
+    #[derive(Debug, Deserialize)]
+    pub struct PostRequest {
+        user_id: u64,
+        user_name: String,
+    }
 
-#[derive(Serialize)]
-struct PostResponse {
-    user_id: u64,
-    user_name: String,
-    message: String,
-}
-
-async fn post(
-    _: (),
-    req: Request<(), (), PostRequest>,
-) -> Result<Response<PostResponse>, Response<String>> {
-    dbg!(&req);
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-    Ok(Response::new()
-        .with_status(StatusCode::CREATED)
-        .with_json(PostResponse {
-            user_id: req.body.user_id,
-            user_name: req.body.user_name.clone(),
-            message: format!("{} - {}", req.body.user_id, req.body.user_name),
-        }))
+    #[derive(Serialize)]
+    pub struct PostResponse {
+        user_id: u64,
+        user_name: String,
+        message: String,
+    }
+    pub async fn post(
+        _: (),
+        req: Request<(), (), PostRequest>,
+    ) -> Result<Response<PostResponse>, Response<String>> {
+        dbg!(&req);
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        Ok(Response::new()
+            .with_status(StatusCode::CREATED)
+            .with_json(PostResponse {
+                user_id: req.body.user_id,
+                user_name: req.body.user_name.clone(),
+                message: format!("{} - {}", req.body.user_id, req.body.user_name),
+            }))
+    }
 }
 
 async fn put(_: (), _req: Request<(), (), ()>) -> Result<Response<()>, Response<String>> {
@@ -87,16 +89,16 @@ gserver! {
             members: [
                 any: {
                     endpoint: "/post",
-                    request_body: json(PostRequest),
-                    handler: post,
+                    request_body: json(p::PostRequest),
+                    handler: p::post,
                 }
             ],
         },
 
         post: {
             endpoint: "/post",
-            request_body: json(PostRequest),
-            handler: post,
+            request_body: json(p::PostRequest),
+            handler: p::post,
         }
 
         put: {
