@@ -9,6 +9,9 @@ pub use ::tokio;
 pub use ::tower;
 pub use ::tower_http;
 
+pub type StatusCode = ::http::StatusCode;
+pub type HeaderMap = ::http::HeaderMap;
+
 mod config;
 pub use config::{Compression, Config};
 
