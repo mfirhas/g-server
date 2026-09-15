@@ -3,10 +3,13 @@ use std::{collections::HashSet, fmt::Display};
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::format_ident;
 use quote::quote;
+use syn::spanned::Spanned;
 use syn::{Expr, LitInt, LitStr, Result, Token, Type, braced, parse::ParseStream};
 
 use crate::config::ConfigEntry;
+use crate::group::Group;
 use crate::group::GroupMember;
+use crate::route::Route;
 
 pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
     let mut config = Vec::new();
@@ -190,6 +193,8 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
         validate_http_server_configs(server)?;
 
         validate_http_routes(server)?;
+
+        validate_http_group_routes(server)?;
     }
 
     Ok(())
@@ -249,16 +254,49 @@ fn validate_http_routes(server: &crate::server::Server) -> Result<()> {
                 if let syn::Lit::Str(endpoint) = &expr.lit {
                     let endpoint_value = endpoint.value();
 
-                    let validation_endpoint = normalize_route_endpoint(&endpoint_value);
+                    validate_endpoint(&endpoint_value)
+                        .map_err(|err| syn::Error::new(endpoint.span(), err))?;
 
-                    let key = (route.method, validation_endpoint.clone());
+                    let normalized_endpoint = normalize_route_endpoint(&endpoint_value);
+
+                    let key = (route.method, normalized_endpoint.clone());
 
                     if !routes.insert(key) {
                         return Err(syn::Error::new(
                             endpoint.span(),
-                            format!("duplicate route: {} {}", route.method, validation_endpoint,),
+                            format!("duplicate route: {} {}", route.method, normalized_endpoint,),
                         ));
                     }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_http_group_routes(server: &crate::server::Server) -> Result<()> {
+    if let ServerKind::Http = server.kind {
+        let mut routes_set = HashSet::new();
+
+        for group in &server.body.groups {
+            let routes = flatten_group_endpoints(group);
+            for route in &routes {
+                validate_endpoint(&route.0)
+                    .map_err(|err| syn::Error::new(group.prefix.span(), err))?;
+
+                let normalizaed_endpoint = normalize_route_endpoint(route.0.as_str());
+
+                let key = (route.1.method, normalizaed_endpoint.clone());
+
+                if !routes_set.insert(key) {
+                    return Err(syn::Error::new(
+                        group.prefix.span(),
+                        format!(
+                            "duplicate group route: {} {}",
+                            route.1.method, normalizaed_endpoint
+                        ),
+                    ));
                 }
             }
         }
@@ -279,6 +317,135 @@ fn normalize_route_endpoint(endpoint: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// Validates that an endpoint path template has properly balanced,
+/// non-empty, non-nested `{param}` segments.
+pub fn validate_endpoint(path: &str) -> std::result::Result<(), &'static str> {
+    let mut open = false;
+    let mut last_open_idx = 0;
+
+    for (i, ch) in path.char_indices() {
+        match ch {
+            '{' => {
+                if open {
+                    return Err("nested '{' found before previous one was closed");
+                }
+                open = true;
+                last_open_idx = i;
+            }
+            '}' => {
+                if !open {
+                    return Err("unmatched '}' with no preceding '{'");
+                }
+                if i == last_open_idx + 1 {
+                    return Err("empty parameter '{}' found");
+                }
+                open = false;
+            }
+            _ => {}
+        }
+    }
+
+    if open {
+        return Err("unclosed '{' found in path");
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod validate_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn valid_paths() {
+        assert!(validate_endpoint("/v1/user/{user_id}").is_ok());
+        assert!(validate_endpoint("/v1/user/{user_id}/posts/{post_id}").is_ok());
+        assert!(validate_endpoint("/v1/health").is_ok());
+    }
+
+    #[test]
+    fn missing_closing_brace() {
+        assert_eq!(
+            validate_endpoint("/v1/user/{user_id"),
+            Err("unclosed '{' found in path")
+        );
+    }
+
+    #[test]
+    fn missing_opening_brace() {
+        assert_eq!(
+            validate_endpoint("/v1/user/user_id}"),
+            Err("unmatched '}' with no preceding '{'")
+        );
+    }
+
+    #[test]
+    fn empty_param() {
+        assert_eq!(
+            validate_endpoint("/v1/user/{}"),
+            Err("empty parameter '{}' found")
+        );
+    }
+
+    #[test]
+    fn nested_brace() {
+        assert_eq!(
+            validate_endpoint("/v1/user/{user_{id}"),
+            Err("nested '{' found before previous one was closed")
+        );
+    }
+}
+
+// group validation
+fn flatten_group_endpoints(group: &Group) -> Vec<(String, &Route)> {
+    fn visit<'a>(group: &'a Group, parent_prefix: &str, endpoints: &mut Vec<(String, &'a Route)>) {
+        let prefix = join(parent_prefix, expr_string(&group.prefix));
+
+        for member in &group.members {
+            match member {
+                GroupMember::Route(route) => {
+                    let endpoint = join(&prefix, expr_string(&route.endpoint));
+                    endpoints.push((endpoint, route));
+                }
+
+                GroupMember::Group(group) => {
+                    visit(group, &prefix, endpoints);
+                }
+            }
+        }
+    }
+
+    fn expr_string(expr: &Expr) -> String {
+        match expr {
+            Expr::Lit(expr) => match &expr.lit {
+                syn::Lit::Str(value) => value.value(),
+                _ => panic!("expected string literal"),
+            },
+            _ => panic!("expected string literal"),
+        }
+    }
+
+    fn join(parent: &str, child: String) -> String {
+        if parent.is_empty() {
+            return child;
+        }
+
+        if child.is_empty() {
+            return parent.to_owned();
+        }
+
+        format!(
+            "{}/{}",
+            parent.trim_end_matches('/'),
+            child.trim_start_matches('/'),
+        )
+    }
+
+    let mut endpoints = Vec::new();
+    visit(group, "", &mut endpoints);
+    endpoints
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
