@@ -358,7 +358,9 @@ fn normalize_route_endpoint(endpoint: &str) -> String {
 }
 
 /// Validates that an endpoint path template has properly balanced,
-/// non-empty, non-nested `{param}` segments.
+/// non-empty, non-nested `{param}` segments, and that each parameter
+/// occupies its own full path segment (e.g. `/v1/user{id}` is invalid —
+/// it must be `/v1/user/{id}`).
 pub fn validate_endpoint(path: &str) -> std::result::Result<(), &'static str> {
     let mut open = false;
     let mut last_open_idx = 0;
@@ -387,6 +389,24 @@ pub fn validate_endpoint(path: &str) -> std::result::Result<(), &'static str> {
 
     if open {
         return Err("unclosed '{' found in path");
+    }
+
+    for segment in path.split('/') {
+        let has_open = segment.contains('{');
+        let has_close = segment.contains('}');
+
+        if has_open || has_close {
+            let starts_right = segment.starts_with('{');
+            let ends_right = segment.ends_with('}');
+            let only_one_each =
+                segment.matches('{').count() == 1 && segment.matches('}').count() == 1;
+
+            if !(starts_right && ends_right && only_one_each) {
+                return Err(
+                    "parameter must occupy its entire path segment, e.g. '/v1/{id}' not '/v1/user{id}'",
+                );
+            }
+        }
     }
 
     Ok(())
@@ -432,6 +452,28 @@ mod validate_endpoint_tests {
         assert_eq!(
             validate_endpoint("/v1/user/{user_{id}"),
             Err("nested '{' found before previous one was closed")
+        );
+    }
+
+    #[test]
+    fn param_sharing_segment_with_literal() {
+        assert_eq!(
+            validate_endpoint("/v1/user{id}"),
+            Err(
+                "parameter must occupy its entire path segment, e.g. '/v1/{id}' not '/v1/user{id}'"
+            )
+        );
+        assert_eq!(
+            validate_endpoint("/v1/{id}suffix"),
+            Err(
+                "parameter must occupy its entire path segment, e.g. '/v1/{id}' not '/v1/user{id}'"
+            )
+        );
+        assert_eq!(
+            validate_endpoint("/v1/a{id}b"),
+            Err(
+                "parameter must occupy its entire path segment, e.g. '/v1/{id}' not '/v1/user{id}'"
+            )
         );
     }
 }
