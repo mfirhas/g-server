@@ -259,6 +259,25 @@ fn validate_http_routes(server: &crate::server::Server) -> Result<()> {
 
                     let normalized_endpoint = normalize_route_endpoint(&endpoint_value);
 
+                    if let HttpMethod::Any = route.method {
+                        if routes
+                            .iter()
+                            .any(|(_, endpoint)| endpoint == &normalized_endpoint)
+                        {
+                            return Err(syn::Error::new(
+                                endpoint.span(),
+                                format!("duplicate endpoint for `any`: {}", &endpoint_value),
+                            ));
+                        }
+                    } else if routes.iter().any(|(method, endpoint)| {
+                        matches!(method, HttpMethod::Any) && endpoint == &normalized_endpoint
+                    }) {
+                        return Err(syn::Error::new(
+                            endpoint.span(),
+                            format!("duplicate endpoint for existing `any`: {}", &endpoint_value),
+                        ));
+                    }
+
                     let key = (route.method, normalized_endpoint.clone());
 
                     if !routes.insert(key) {
@@ -285,16 +304,35 @@ fn validate_http_group_routes(server: &crate::server::Server) -> Result<()> {
                 validate_endpoint(&route.0)
                     .map_err(|err| syn::Error::new(group.prefix.span(), err))?;
 
-                let normalizaed_endpoint = normalize_route_endpoint(route.0.as_str());
+                let normalized_endpoint = normalize_route_endpoint(route.0.as_str());
 
-                let key = (route.1.method, normalizaed_endpoint.clone());
+                if let HttpMethod::Any = route.1.method {
+                    if routes_set
+                        .iter()
+                        .any(|(_, endpoint)| endpoint == &normalized_endpoint)
+                    {
+                        return Err(syn::Error::new(
+                            route.1.endpoint.span(),
+                            format!("duplicate endpoint for `any`: {}", &route.0),
+                        ));
+                    }
+                } else if routes_set.iter().any(|(method, endpoint)| {
+                    matches!(method, HttpMethod::Any) && endpoint == &normalized_endpoint
+                }) {
+                    return Err(syn::Error::new(
+                        route.1.endpoint.span(),
+                        format!("duplicate endpoint for existing `any`: {}", &route.0),
+                    ));
+                }
+
+                let key = (route.1.method, normalized_endpoint.clone());
 
                 if !routes_set.insert(key) {
                     return Err(syn::Error::new(
                         group.prefix.span(),
                         format!(
                             "duplicate group route: {} {}",
-                            route.1.method, normalizaed_endpoint
+                            route.1.method, normalized_endpoint
                         ),
                     ));
                 }
