@@ -3,6 +3,21 @@ use quote::{ToTokens, quote};
 use std::{fmt::Display, str::FromStr};
 use syn::{Expr, Result, Token, parse::ParseStream, spanned::Spanned};
 
+pub(crate) const CONFIG_FIELD_TIMEOUT: &str = "timeout";
+pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT: &str = "concurrency_limit";
+pub(crate) const CONFIG_FIELD_BODY_LIMIT: &str = "body_limit";
+pub(crate) const CONFIG_FIELD_COMPRESSION: &str = "compression";
+pub(crate) const CONFIG_FIELD_NORMALIZE_ENDPOINT: &str = "normalize_endpoint";
+pub(crate) const CONFIG_FIELD_TIMEOUT_ERROR: &str = "timeout_error";
+pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit_error";
+
+/// Configs that only allowed in server's root.
+pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
+    CONFIG_FIELD_NORMALIZE_ENDPOINT,
+    CONFIG_FIELD_TIMEOUT_ERROR,
+    CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
+];
+
 /// Parses config.
 ///
 /// ```
@@ -113,11 +128,11 @@ pub(crate) struct ConfigEntry {
 impl ConfigEntry {
     pub(crate) fn try_new(name: Ident, mut value: Expr) -> Result<Self> {
         match name.to_string().as_str() {
-            "timeout" => Self::validate_integer(&value),
-            "concurrency_limit" => Self::validate_integer(&value),
-            "body_limit" => Self::validate_integer(&value),
-            "compression" => Self::validate_compression(&mut value),
-            "normalize_endpoint" => Self::validate_bool(&value),
+            CONFIG_FIELD_TIMEOUT => Self::validate_integer(&value),
+            CONFIG_FIELD_CONCURRENCY_LIMIT => Self::validate_integer(&value),
+            CONFIG_FIELD_BODY_LIMIT => Self::validate_integer(&value),
+            CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
+            CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
 
             _ => Err(syn::Error::new(
                 name.span(),

@@ -228,13 +228,10 @@ fn validate_group_configs(group: &crate::group::Group) -> Result<()> {
     Ok(())
 }
 
-// configs that only exist at global config
-static GLOBAL_CONFIG: [&str; 1] = ["normalize_endpoint"];
-
 fn validate_non_global_configs(configs: &[ConfigEntry]) -> Result<()> {
     for cfg in configs {
         let ident_name = cfg.name.to_string();
-        if GLOBAL_CONFIG.contains(&ident_name.as_str()) {
+        if crate::config::GLOBAL_CONFIGS.contains(&ident_name.as_str()) {
             return Err(syn::Error::new(
                 cfg.name.span(),
                 format!("`{}` only allowed for global config", &ident_name),
