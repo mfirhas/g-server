@@ -92,11 +92,11 @@ pub struct Route<F> {
     pub executor: Executor<F>,
 }
 
-pub async fn unimplemented_handler<C, P, Q, ReqB>(
+pub async fn unimplemented_handler<C, P, Q, ReqB, ResB>(
     _: C,
     _: Request<P, Q, ReqB>,
-) -> Result<Response<String>, Response<String>> {
+) -> Result<Response<ResB>, Response<String>> {
     Err(Response::new()
         .with_status(crate::http::StatusCode::NOT_IMPLEMENTED)
-        .with_text("not implemented".into()))
+        .with_text("g-server: not implemented".into()))
 }

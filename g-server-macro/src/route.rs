@@ -1,5 +1,5 @@
 use proc_macro2::{Ident, Span};
-use quote::format_ident;
+use quote::{format_ident, quote};
 use syn::{Expr, Path, Result, Token, Type, braced, parse::ParseStream, spanned::Spanned};
 
 use crate::server::{HttpMethod, Server};
@@ -138,8 +138,15 @@ pub(crate) fn parse_route(
         .ok_or_else(|| syn::Error::new(endpoint.span(), "failed sanitizing route endpoint"))?;
 
     let handler = handler.unwrap_or_else(|| {
+        let resp_type = match &response_body {
+            crate::response_body::ResponseBody::Json(ty) => quote! { #ty },
+            crate::response_body::ResponseBody::String => quote! { String },
+            crate::response_body::ResponseBody::Html => quote! { String },
+            crate::response_body::ResponseBody::Empty => quote! { () },
+        };
+
         RouteHandler::Path(syn::parse_quote! {
-            g_server::route::unimplemented_handler
+            g_server::route::unimplemented_handler::<_, _, _, _, #resp_type>
         })
     });
 
