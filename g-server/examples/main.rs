@@ -564,7 +564,9 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
                 body,
             };
 
-            match route.executor.exec(cx, req).await {
+            let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+
+            match res {
                 Ok(resp) => resp.into_axum_json(),
                 Err(err) => err.into_axum_json(),
             }

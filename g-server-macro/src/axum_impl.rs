@@ -471,7 +471,7 @@ fn generate_route_function(
 
     let middleware_chain = generate_middleware_chain(route, handler);
 
-    let route_response = generate_route_response(route.response_body);
+    let route_response = generate_route_response(&route.response_body);
 
     let method = route.method.method_tokens();
 
@@ -808,7 +808,7 @@ fn generate_group_route_function(
 
     let middleware_chain = generate_group_function_middlewares(middlewares, handler);
 
-    let route_response = generate_route_response(route.response_body);
+    let route_response = generate_route_response(&route.response_body);
 
     let method = route.method.method_tokens();
 
@@ -1008,37 +1008,56 @@ fn generate_middleware_chain(route: &crate::route::Route, handler: &RouteHandler
 // Response conversion
 // ============================================================
 
-fn generate_route_response(body: crate::response_body::ResponseBody) -> TokenStream2 {
-    let resp_body_type = match body {
-        crate::response_body::ResponseBody::Json => {
-            quote! {
-                into_axum_json()
+fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenStream2 {
+    match body {
+        crate::response_body::ResponseBody::Json(ty) => {
+            if matches!(ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
+                quote! {
+                    let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+                    match res {
+                        Ok(resp) => resp.into_axum_json(),
+                        Err(err) => err.into_axum_json(),
+                    }
+                }
+            } else {
+                quote! {
+                    let res: g_server::Result<#ty, _> = route.executor.exec(cx, req).await;
+                    match res {
+                        Ok(resp) => resp.into_axum_json(),
+                        Err(err) => err.into_axum_json(),
+                    }
+                }
             }
         }
 
         crate::response_body::ResponseBody::String => {
             quote! {
-                into_axum_string()
+                let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+                match res {
+                    Ok(resp) => resp.into_axum_string(),
+                    Err(err) => err.into_axum_string(),
+                }
             }
         }
 
         crate::response_body::ResponseBody::Html => {
             quote! {
-                into_axum_html()
+                let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+                match res {
+                    Ok(resp) => resp.into_axum_html(),
+                    Err(err) => err.into_axum_html(),
+                }
             }
         }
 
         crate::response_body::ResponseBody::Empty => {
             quote! {
-                into_axum_empty()
+                let res: g_server::Result<(), _> = route.executor.exec(cx, req).await;
+                match res {
+                    Ok(resp) => resp.into_axum_empty(),
+                    Err(err) => err.into_axum_empty(),
+                }
             }
-        }
-    };
-
-    quote! {
-        match route.executor.exec(cx, req).await {
-            Ok(resp) => resp.#resp_body_type,
-            Err(err) => err.#resp_body_type,
         }
     }
 }
