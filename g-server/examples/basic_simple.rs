@@ -71,6 +71,8 @@ gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         config: {
             normalize_endpoint: true,
+            timeout: 1000,
+            timeout_error: text(Response::new().with_text("nganuus".into()))
         }
         get: {
             endpoint: "/",
@@ -97,6 +99,10 @@ gserver! {
 
         post: {
             endpoint: "/post",
+            config: {
+                timeout: 1,
+                // timeout_error: text(Response::new().with_text("asdasd".into()))
+            }
             request_body: json(p::PostRequest),
             handler: p::post,
         }

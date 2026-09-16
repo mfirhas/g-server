@@ -207,22 +207,35 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 router = router.layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
             }
 
-            if let Some(ms) = global_config.timeout {
-                let timeout_err = global_config.timeout_error;
-                router = router.layer(
-                    g_server::tower::ServiceBuilder::new()
-                        .layer(g_server::axum::error_handling::HandleErrorLayer::new(
-                            move |err: g_server::tower::BoxError| async move {
-                                match timeout_err {
-                                    Some(err_handler) => err_handler(),
-                                    _ => (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string()).into_response(),
-                                }
-                            },
-                        ))
-                        .layer(g_server::tower::timeout::TimeoutLayer::new(
-                            g_server::tokio::time::Duration::from_millis(ms),
-                        )),
-                );
+            match (global_config.timeout, global_config.timeout_error) {
+                (Some(ms), Some(err_handler)) => {
+                    router = router.layer(
+                        g_server::tower::ServiceBuilder::new()
+                            .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                                move |err: g_server::tower::BoxError| async move {
+                                    err_handler()
+                                },
+                            ))
+                            .layer(g_server::tower::timeout::TimeoutLayer::new(
+                                g_server::tokio::time::Duration::from_millis(ms),
+                            )),
+                    );
+                },
+                (Some(ms), _) => {
+                    router = router.layer(
+                        g_server::tower::ServiceBuilder::new()
+                            .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                                move |err: g_server::tower::BoxError| async move {
+                                    (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string()).into_response()
+                                },
+                            ))
+                            .layer(g_server::tower::timeout::TimeoutLayer::new(
+                                g_server::tokio::time::Duration::from_millis(ms),
+                            )),
+                    );
+                },
+                (_, Some(err_handler)) => {}, // should be validated at config parsing
+                _ => {}
             }
 
             if let Some(normalize_endpoint) = global_config.normalize_endpoint && normalize_endpoint {
@@ -275,22 +288,35 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 router = router.route_layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
             }
 
-            if let Some(ms) = config.timeout {
-                let timeout_err = config.timeout_error;
-                router = router.route_layer(
-                    g_server::tower::ServiceBuilder::new()
-                        .layer(g_server::axum::error_handling::HandleErrorLayer::new(
-                            move |err: g_server::tower::BoxError| async move {
-                                match timeout_err {
-                                    Some(err_handler) => err_handler(),
-                                    _ => (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string()).into_response(),
-                                }
-                            },
-                        ))
-                        .layer(g_server::tower::timeout::TimeoutLayer::new(
-                            g_server::tokio::time::Duration::from_millis(ms),
-                        )),
-                );
+            match (config.timeout, config.timeout_error) {
+                (Some(ms), Some(err_handler)) => {
+                    router = router.route_layer(
+                        g_server::tower::ServiceBuilder::new()
+                            .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                                move |err: g_server::tower::BoxError| async move {
+                                    err_handler()
+                                },
+                            ))
+                            .layer(g_server::tower::timeout::TimeoutLayer::new(
+                                g_server::tokio::time::Duration::from_millis(ms),
+                            )),
+                    );
+                },
+                (Some(ms), _) => {
+                    router = router.route_layer(
+                        g_server::tower::ServiceBuilder::new()
+                            .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                                move |err: g_server::tower::BoxError| async move {
+                                    (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string()).into_response()
+                                },
+                            ))
+                            .layer(g_server::tower::timeout::TimeoutLayer::new(
+                                g_server::tokio::time::Duration::from_millis(ms),
+                            )),
+                    );
+                },
+                (_, Some(err_handler)) => {}, // should be validated at config parsing
+                _ => {}
             }
 
             if let Some(normalize_endpoint) = config.normalize_endpoint && normalize_endpoint {
