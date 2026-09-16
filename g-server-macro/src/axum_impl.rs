@@ -208,11 +208,15 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
             }
 
             if let Some(ms) = global_config.timeout {
+                let timeout_err = global_config.timeout_error;
                 router = router.layer(
                     g_server::tower::ServiceBuilder::new()
                         .layer(g_server::axum::error_handling::HandleErrorLayer::new(
-                            |err: g_server::tower::BoxError| async move {
-                                (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string())
+                            move |err: g_server::tower::BoxError| async move {
+                                match timeout_err {
+                                    Some(err_handler) => err_handler(),
+                                    _ => (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string()).into_response(),
+                                }
                             },
                         ))
                         .layer(g_server::tower::timeout::TimeoutLayer::new(
@@ -272,11 +276,15 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
             }
 
             if let Some(ms) = config.timeout {
+                let timeout_err = config.timeout_error;
                 router = router.route_layer(
                     g_server::tower::ServiceBuilder::new()
                         .layer(g_server::axum::error_handling::HandleErrorLayer::new(
-                            |err: g_server::tower::BoxError| async move {
-                                (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string())
+                            move |err: g_server::tower::BoxError| async move {
+                                match timeout_err {
+                                    Some(err_handler) => err_handler(),
+                                    _ => (g_server::http::StatusCode::GATEWAY_TIMEOUT, err.to_string()).into_response(),
+                                }
                             },
                         ))
                         .layer(g_server::tower::timeout::TimeoutLayer::new(
@@ -475,8 +483,6 @@ fn generate_route_function(
 
     let method = route.method.method_tokens();
 
-    let response_body_type = format_ident!("{}", route.response_body.to_string());
-
     let endpoint = &route.endpoint;
 
     // Route config starts from inherited global
@@ -499,7 +505,6 @@ fn generate_route_function(
                     method: #method,
                     endpoint: #endpoint,
                     config,
-                    response_body_type: g_server::route::ResponseBodyType::#response_body_type,
                     executor,
                 };
 
@@ -812,8 +817,6 @@ fn generate_group_route_function(
 
     let method = route.method.method_tokens();
 
-    let response_body_type = format_ident!("{}", route.response_body.to_string());
-
     let endpoint = &route.endpoint;
 
     // Route config starts from inherited global
@@ -836,7 +839,6 @@ fn generate_group_route_function(
                     method: #method,
                     endpoint: #endpoint,
                     config,
-                    response_body_type: g_server::route::ResponseBodyType::#response_body_type,
                     executor,
                 };
 

@@ -14,6 +14,9 @@ pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_NORMALIZE_ENDPOINT,
+];
+
+static CUSTOM_ERRORS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
     CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
 ];
@@ -64,6 +67,58 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
 
         let value = &entry.value;
 
+        if CUSTOM_ERRORS.contains(&field.to_string().as_str()) {
+            if let Expr::Call(call) = value
+                && let Expr::Path(p) = &*call.func
+            {
+                match p.path.get_ident().map(|i| i.to_string()).as_deref() {
+                    Some("Json") | Some("json") => {
+                        let err_resp: &Expr = &call.args.get(0).expect(
+                            format!(
+                                "root config field `{}` requires value of `json(g_server::Response<T: ::serde::Serialize>)`", &field.to_string().as_str()
+                            )
+                            .as_str(),
+                        );
+                        return quote! {
+                            global_config.#field = Some(|| #err_resp.into_axum_json());
+                        };
+                    }
+                    Some("Text") | Some("String") | Some("text") | Some("string") => {
+                        let err_resp: &Expr = &call.args.get(0).expect(
+                            format!(
+                                "root config field `{}` requires value of `text(g_server::Response<T: ::serde::Serialize>)`, or `string(...)`", &field.to_string().as_str()
+                            )
+                            .as_str(),
+                        );
+                        return quote! {
+                            global_config.#field = Some(|| #err_resp.into_axum_string());                  
+                        };
+                    },
+                    Some("Html") | Some("html") => {
+                        let err_resp: &Expr = &call.args.get(0).expect(
+                            format!(
+                                "root config field `{}` requires value of `html(g_server::Response<T: ::serde::Serialize>)`", &field.to_string().as_str()
+                            )
+                            .as_str(),
+                        );
+                        return quote! {
+                            global_config.#field = Some(|| #err_resp.into_axum_html()); 
+                        };
+                    },
+                    _ => {
+                        // should be unreachable if validated properly.
+                        return quote! {
+                            global_config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                        }
+                    }
+                }
+            }
+
+            return quote! {
+                config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+            };
+        }
+
         quote! {
             global_config.#field = (#value).into();
         }
@@ -81,6 +136,58 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
         let field = &entry.name;
 
         let value = &entry.value;
+
+        if CUSTOM_ERRORS.contains(&field.to_string().as_str()) {
+            if let Expr::Call(call) = value
+                && let Expr::Path(p) = &*call.func
+            {
+                match p.path.get_ident().map(|i| i.to_string()).as_deref() {
+                    Some("Json") | Some("json") => {
+                        let err_resp: &Expr = &call.args.get(0).expect(
+                            format!(
+                                "root config field `{}` requires value of `json(g_server::Response<T: ::serde::Serialize>)`", &field.to_string().as_str()
+                            )
+                            .as_str(),
+                        );
+                        return quote! {
+                            config.#field = Some(|| #err_resp.into_axum_json());
+                        };
+                    }
+                    Some("Text") | Some("String") | Some("text") | Some("string") => {
+                        let err_resp: &Expr = &call.args.get(0).expect(
+                            format!(
+                                "root config field `{}` requires value of `text(g_server::Response<T: Display>)`, or `string(...)`", &field.to_string().as_str()
+                            )
+                            .as_str(),
+                        );
+                        return quote! {
+                            config.#field = Some(|| #err_resp.into_axum_string()); 
+                        };
+                    },
+                    Some("Html") | Some("html") => {
+                        let err_resp: &Expr = &call.args.get(0).expect(
+                            format!(
+                                "root config field `{}` requires value of `html(g_server::Response<T: Display>)`", &field.to_string().as_str()
+                            )
+                            .as_str(),
+                        );
+                        return quote! {
+                            config.#field = Some(|| #err_resp.into_axum_html());
+                        };
+                    },
+                    _ => {
+                        // should be unreachable if validated properly.
+                        return quote! {
+                            config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                        };
+                    }
+                }
+            }
+
+            return quote! {
+                config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+            };
+        }
 
         quote! {
             config.#field = (#value).into();
@@ -133,6 +240,7 @@ impl ConfigEntry {
             CONFIG_FIELD_BODY_LIMIT => Self::validate_integer(&value),
             CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
+            CONFIG_FIELD_TIMEOUT_ERROR | CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR => Self::validate_custom_errors(&value),
 
             _ => Err(syn::Error::new(
                 name.span(),
@@ -167,6 +275,25 @@ impl ConfigEntry {
 
             _ => Err(syn::Error::new(value.span(), "expects a boolean")),
         }
+    }
+
+    fn validate_custom_errors(value: &Expr) -> Result<()> {
+        if let Expr::Call(call) = value
+            && let Expr::Path(p) = &*call.func
+        {
+            match p.path.get_ident().map(|i| i.to_string()).as_deref() {
+                Some("Json") | Some("json") => {}
+                Some("Text") | Some("String") | Some("text") | Some("string") => {},
+                Some("Html") | Some("html") => {},
+                _ => {
+                    return Err(syn::Error::new(value.span(), "expected values: json(T), text(T), html(T), or ()"))
+                }
+            }
+        } else {
+            return Err(syn::Error::new(value.span(), "invalid custom errors values, expected values: json(T), text(T), html(T)"))
+        }
+
+        Ok(())
     }
 }
 

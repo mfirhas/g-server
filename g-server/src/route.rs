@@ -40,16 +40,6 @@ impl From<crate::http::Method> for HttpMethod {
     }
 }
 
-/// Response body supported.
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub enum ResponseBodyType {
-    #[default]
-    Json,
-    String,
-    Html,
-    Empty,
-}
-
 /// Contains all middlewares(if any) and handler.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
@@ -88,7 +78,6 @@ pub struct Route<F> {
     pub method: HttpMethod,
     pub endpoint: &'static str,
     pub config: Config,
-    pub response_body_type: ResponseBodyType,
     pub executor: Executor<F>,
 }
 

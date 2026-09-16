@@ -445,7 +445,6 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
         method: route::HttpMethod::Post, // from macro: route::HttpMethod::$expr -> method
         endpoint: "/route_1/{user_id}/{user_email}",
         config,
-        response_body_type: route::ResponseBodyType::Json, // from macro. route::ResponseBodyType::$expr
         executor: executor,
     };
 
@@ -546,7 +545,6 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
         method: route::HttpMethod::Post,
         endpoint: "/route_2",
         config,
-        response_body_type: route::ResponseBodyType::Json,
         executor: executor,
     };
 

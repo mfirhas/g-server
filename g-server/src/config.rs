@@ -1,5 +1,5 @@
 /// Server's config
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Config {
     /// Timeout in ms, default 5000 ms
     pub timeout: Option<u64>,
@@ -11,6 +11,11 @@ pub struct Config {
     pub compression: Option<Compression>,
     /// Remove repeated slash(es)
     pub normalize_endpoint: Option<bool>,
+
+    /// Custom timeout error
+    pub timeout_error: Option<fn() -> ::axum::response::Response>,
+    /// Custom concurrency limit error
+    pub concurrency_limit_error: Option<fn() -> ::axum::response::Response>,
 }
 
 impl Config {
