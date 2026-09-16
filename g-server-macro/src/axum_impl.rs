@@ -770,7 +770,7 @@ fn group_route_function_ident(
     path: &[String],
     route: &crate::route::Route,
 ) -> Ident {
-    let mut name = format!("__route_{}", server.name.value());
+    let mut name = format!("__route_{}_{}", server.name.value(), route.method);
 
     for prefix in path {
         name.push('_');
@@ -794,7 +794,11 @@ fn group_route_function_ident(
             )
         }
         crate::route::RouteHandler::Path(ref path) => {
-            path.segments.last().unwrap().ident.to_string()
+            format!(
+                "{}_{}",
+                path.segments.last().unwrap().ident,
+                crate::random_6_chars()
+            )
         }
         crate::route::RouteHandler::Closure(_) => crate::random_6_chars(),
     };

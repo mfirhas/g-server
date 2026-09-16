@@ -88,7 +88,20 @@ gserver! {
 
         group: {
             prefix: "/v1",
+            config: {
+                concurrency_limit: 0,
+            },
             members: [
+                get: {
+                    endpoint: "/test",
+                    request_body: json(p::PostRequest),
+                    handler: p::post,
+                }
+                get: {
+                    endpoint: "/wer",
+                    request_body: json(p::PostRequest),
+                    handler: p::post,
+                }
                 any: {
                     endpoint: "/post",
                     request_body: json(p::PostRequest),
@@ -103,6 +116,18 @@ gserver! {
                 timeout: 1,
                 // timeout_error: text(Response::new().with_text("asdasd".into()))
             }
+            request_body: json(p::PostRequest),
+            handler: p::post,
+        }
+
+        get: {
+            endpoint: "/test",
+            request_body: json(p::PostRequest),
+            handler: p::post,
+        }
+
+        get: {
+            endpoint: "/zxc",
             request_body: json(p::PostRequest),
             handler: p::post,
         }
