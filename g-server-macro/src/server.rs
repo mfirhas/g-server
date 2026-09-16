@@ -146,15 +146,12 @@ pub(crate) struct GServer {
 
 impl GServer {
     pub(crate) fn try_new(servers: Vec<Server>) -> Result<Self> {
-        Self { servers }.validate()
-    }
-
-    pub(crate) fn validate(self) -> Result<Self> {
-        validate_servers(&self.servers)?;
-        Ok(self)
+        validate_servers(&servers)?;
+        Ok(Self { servers })
     }
 }
 
+#[must_use]
 fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
     let mut names = HashSet::new();
     let mut ports = HashSet::new();
