@@ -57,30 +57,29 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
         crate::consume_comma(input)?;
     }
 
-    validate_dependent_fields(&entries)?;
-
     Ok(entries)
 }
 
-fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
-    let pairs = [
-        (CONFIG_FIELD_TIMEOUT_ERROR, CONFIG_FIELD_TIMEOUT),
-        (CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR, CONFIG_FIELD_CONCURRENCY_LIMIT),
-    ];
+/// validate config entries that depend on other config entries.
+// fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
+//     let pairs = [
+//         (CONFIG_FIELD_TIMEOUT_ERROR, CONFIG_FIELD_TIMEOUT),
+//         (CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR, CONFIG_FIELD_CONCURRENCY_LIMIT),
+//     ];
 
-    for (dependent, required) in pairs {
-        if let Some(entry) = entries.iter().find(|e| e.name == dependent) {
-            if !entries.iter().any(|e| e.name == required) {
-                return Err(syn::Error::new(
-                    entry.name.span(),
-                    format!("`{dependent}` requires `{required}` to also be set"),
-                ));
-            }
-        }
-    }
+//     for (dependent, required) in pairs {
+//         if let Some(entry) = entries.iter().find(|e| e.name == dependent) {
+//             if !entries.iter().any(|e| e.name == required) {
+//                 return Err(syn::Error::new(
+//                     entry.name.span(),
+//                     format!("`{dependent}` requires `{required}` to also be set"),
+//                 ));
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// Generation function for global config.
 pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
