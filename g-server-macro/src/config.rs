@@ -16,7 +16,7 @@ pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_NORMALIZE_ENDPOINT,
 ];
 
-static CUSTOM_ERRORS: &[&str] = &[
+pub(crate) static CUSTOM_ERRORS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
     CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
 ];

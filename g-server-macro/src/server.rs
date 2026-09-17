@@ -107,12 +107,16 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
         crate::consume_comma(input)?;
     }
 
-    Ok(ServerBody {
+    let mut server_body = ServerBody {
         config,
         context,
         routes,
         groups,
-    })
+    };
+
+    server_body.inherit_error_handlers();
+
+    Ok(server_body)
 }
 
 pub(crate) struct Server {
@@ -521,6 +525,72 @@ fn flatten_group_endpoints(group: &Group) -> Vec<(String, &Route)> {
     visit(group, "", &mut endpoints);
     endpoints
 }
+
+// inherit custom error handling
+// ------------------------------------------------------------------------
+impl ServerBody {
+    pub(crate) fn inherit_error_handlers(&mut self) {
+        // Root is the farthest ancestor.
+        let inherited = error_handlers(&self.config);
+
+        // Top-level routes inherit directly from root.
+        for route in &mut self.routes {
+            inherit_error_handlers(&inherited, &mut route.config);
+        }
+
+        // Top-level groups inherit from root, then propagate
+        // their effective handlers to their descendants.
+        for group in &mut self.groups {
+            inherit_group_error_handlers(&inherited, group);
+        }
+    }
+}
+
+fn inherit_group_error_handlers(inherited: &[ConfigEntry], group: &mut Group) {
+    // Only fill handlers that this group does not explicitly define.
+    //
+    // Because `inherited` comes from the closest parent, a closer
+    // group's handler always wins over a farther ancestor's handler.
+    inherit_error_handlers(inherited, &mut group.config);
+
+    // This is now the group's effective error-handler configuration.
+    let effective = error_handlers(&group.config);
+
+    for member in &mut group.members {
+        match member {
+            GroupMember::Route(route) => {
+                // Route's own handler wins; otherwise inherit from
+                // the closest group, eventually falling back to root.
+                inherit_error_handlers(&effective, &mut route.config);
+            }
+
+            GroupMember::Group(child) => {
+                // Pass the closest group's effective handlers down.
+                inherit_group_error_handlers(&effective, child);
+            }
+        }
+    }
+}
+
+fn inherit_error_handlers(inherited: &[ConfigEntry], config: &mut Vec<ConfigEntry>) {
+    for entry in inherited {
+        // Child already has this handler, so its own value wins.
+        if config.iter().any(|existing| existing.name == entry.name) {
+            continue;
+        }
+
+        config.push(entry.clone());
+    }
+}
+
+fn error_handlers(config: &[ConfigEntry]) -> Vec<ConfigEntry> {
+    config
+        .iter()
+        .filter(|entry| crate::config::CUSTOM_ERRORS.contains(&entry.name.to_string().as_str()))
+        .cloned()
+        .collect()
+}
+// ------------------------------------------------------------------------
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum HttpMethod {
