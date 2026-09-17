@@ -203,8 +203,24 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 router = router.layer(g_server::axum::extract::DefaultBodyLimit::max(bytes));
             }
 
-            if let Some(n) = global_config.concurrency_limit {
-                router = router.layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
+            match (global_config.concurrency_limit, global_config.concurrency_limit_error) {
+                (Some(n), Some(err_handler)) => {
+                    router = router.layer(
+                        g_server::tower::ServiceBuilder::new()
+                            .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                                move |err: g_server::tower::BoxError| async move {
+                                    err_handler()
+                                },
+                            ))
+                            .layer(g_server::tower::load_shed::LoadShedLayer::new())
+                            .layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n)),
+                    );
+                }
+                (Some(n), _) => {
+                    router = router.layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
+                }
+                (_, Some(_)) => {},
+                _ => {}
             }
 
             match (global_config.timeout, global_config.timeout_error) {
@@ -234,7 +250,7 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                             )),
                     );
                 },
-                (_, Some(err_handler)) => {}, // should be validated at config parsing
+                (_, Some(err_handler)) => {},
                 _ => {}
             }
 
@@ -284,8 +300,24 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 router = router.route_layer(g_server::axum::extract::DefaultBodyLimit::max(bytes));
             }
 
-            if let Some(n) = config.concurrency_limit {
-                router = router.route_layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
+            match (config.concurrency_limit, config.concurrency_limit_error) {
+                (Some(n), Some(err_handler)) => {
+                    router = router.route_layer(
+                        g_server::tower::ServiceBuilder::new()
+                            .layer(g_server::axum::error_handling::HandleErrorLayer::new(
+                                move |err: g_server::tower::BoxError| async move {
+                                    err_handler()
+                                },
+                            ))
+                            .layer(g_server::tower::load_shed::LoadShedLayer::new())
+                            .layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n)),
+                    );
+                }
+                (Some(n), _) => {
+                    router = router.route_layer(g_server::tower::limit::ConcurrencyLimitLayer::new(n));
+                }
+                (_, Some(_)) => {},
+                _ => {}
             }
 
             match (config.timeout, config.timeout_error) {
@@ -315,7 +347,7 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                             )),
                     );
                 },
-                (_, Some(err_handler)) => {}, // should be validated at config parsing
+                (_, Some(err_handler)) => {},
                 _ => {}
             }
 
