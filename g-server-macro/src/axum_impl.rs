@@ -535,7 +535,7 @@ fn generate_route_function(
     // OPTIONAL request body.
     let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
 
-    let handler_chain = generate_middleware_chain(route, handler);
+    let handler_chain = generate_handler_chain(&route.middlewares, handler);
 
     let route_response = generate_route_response(&route.response_body);
 
@@ -887,7 +887,7 @@ fn generate_group_route_function(
     // OPTIONAL request body.
     let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
 
-    let handler_chain = generate_group_function_middlewares(middlewares, handler);
+    let handler_chain = generate_handler_chain(middlewares, handler);
 
     let route_response = generate_route_response(&route.response_body);
 
@@ -911,43 +911,6 @@ fn generate_group_route_function(
     );
 
     Ok(handler_registration)
-}
-
-fn generate_group_function_middlewares(
-    middlewares: &[Path],
-    handler: &RouteHandler,
-) -> TokenStream2 {
-    let mut output = match handler {
-        RouteHandler::Path(handler) => quote! {
-            let executor =
-                g_server::route::Executor::new(
-                    #handler
-                );
-        },
-        RouteHandler::Closure(closure) => quote! {
-            let executor =
-                g_server::route::Executor::new(
-                    async move #closure
-                );
-        },
-    };
-
-    for middleware in middlewares.iter().rev() {
-        output.extend(quote! {
-            let executor =
-                g_server::route::Executor::new(
-                    move |cx, req| {
-                        #middleware(
-                            cx,
-                            req,
-                            executor,
-                        )
-                    }
-                );
-        });
-    }
-
-    output
 }
 
 pub(crate) fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
@@ -993,10 +956,10 @@ pub(crate) fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream
 }
 
 // ============================================================
-// Middleware chain
+// Handler chain
 // ============================================================
 
-fn generate_middleware_chain(route: &crate::route::Route, handler: &RouteHandler) -> TokenStream2 {
+fn generate_handler_chain(middlewares: &[Path], handler: &RouteHandler) -> TokenStream2 {
     // No middleware:
     //
     // Executor::new(handler)
@@ -1028,7 +991,7 @@ fn generate_middleware_chain(route: &crate::route::Route, handler: &RouteHandler
         },
     };
 
-    for middleware in route.middlewares.iter().rev() {
+    for middleware in middlewares.iter().rev() {
         output.extend(quote! {
             let executor =
                 g_server::route::Executor::new(
