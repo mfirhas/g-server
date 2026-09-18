@@ -535,7 +535,7 @@ fn generate_route_function(
     // OPTIONAL request body.
     let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
 
-    let middleware_chain = generate_middleware_chain(route, handler);
+    let handler_chain = generate_middleware_chain(route, handler);
 
     let route_response = generate_route_response(&route.response_body);
 
@@ -546,13 +546,39 @@ fn generate_route_function(
 
     let registration = generate_route_registration(route.method, &route.endpoint);
 
-    Ok(quote! {
-        pub fn #function(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
+    let handler_registration = generate_handler_registration(
+        function,
+        context_ty,
+        route_config,
+        handler_chain,
+        path_ty,
+        query_ty,
+        body_extractor,
+        route_response,
+        registration,
+    );
+
+    Ok(handler_registration)
+}
+
+fn generate_handler_registration(
+    func: Ident,
+    context_ty: TokenStream2,
+    route_config: TokenStream2,
+    handler_chain: TokenStream2,
+    path_ty: TokenStream2,
+    query_ty: TokenStream2,
+    body_extractor: TokenStream2,
+    route_response: TokenStream2,
+    registration: TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        pub fn #func(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
             // Then override route-specific fields.
             #route_config
 
             // Handler + optional middleware chain.
-            #middleware_chain
+            #handler_chain
 
             let route_handler = move |
                 method: g_server::http::Method,
@@ -582,7 +608,7 @@ fn generate_route_function(
 
             #registration
         }
-    })
+    }
 }
 
 // ============================================================
@@ -861,7 +887,7 @@ fn generate_group_route_function(
     // OPTIONAL request body.
     let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
 
-    let middleware_chain = generate_group_function_middlewares(middlewares, handler);
+    let handler_chain = generate_group_function_middlewares(middlewares, handler);
 
     let route_response = generate_route_response(&route.response_body);
 
@@ -872,43 +898,19 @@ fn generate_group_route_function(
 
     let registration = generate_route_registration(route.method, &route.endpoint);
 
-    Ok(quote! {
-        pub fn #function(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
-            // Then override route-specific fields.
-            #route_config
+    let handler_registration = generate_handler_registration(
+        function,
+        context_ty,
+        route_config,
+        handler_chain,
+        path_ty,
+        query_ty,
+        body_extractor,
+        route_response,
+        registration,
+    );
 
-            // Handler + optional middleware chain.
-            #middleware_chain
-
-            let route_handler = move |
-                method: g_server::http::Method,
-                g_server::axum::extract::State(cx):
-                    g_server::axum::extract::State<#context_ty>,
-
-                headers: g_server::axum::http::HeaderMap,
-
-                g_server::axum::extract::Path(path_params):
-                    g_server::axum::extract::Path<#path_ty>,
-
-                g_server::axum::extract::Query(query_params):
-                    g_server::axum::extract::Query<#query_ty>,
-
-                #body_extractor
-            | async move {
-                let req = g_server::Request {
-                    method: method.into(),
-                    headers,
-                    path_params,
-                    query_params,
-                    body,
-                };
-
-                #route_response
-            };
-
-            #registration
-        }
-    })
+    Ok(handler_registration)
 }
 
 fn generate_group_function_middlewares(
