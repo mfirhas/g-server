@@ -26,6 +26,9 @@ impl Config {
     }
 }
 
+/// Compression provided by http server.
+///
+/// No compression for response body below 32 bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Compression {
     Deflate,
