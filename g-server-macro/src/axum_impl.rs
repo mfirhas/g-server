@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{Path, Result};
+use syn::{Expr, Path, Result};
 
 use crate::{request_body::RequestBody, route::RouteHandler};
 
@@ -539,16 +539,12 @@ fn generate_route_function(
 
     let route_response = generate_route_response(&route.response_body);
 
-    let method = route.method.method_tokens();
-
-    let endpoint = &route.endpoint;
-
     // Route config starts from inherited global
     // config and overrides only explicitly declared
     // fields.
     let route_config = crate::config::generate_route_config(&route.config);
 
-    let registration = generate_route_registration(route.method);
+    let registration = generate_route_registration(route.method, &route.endpoint);
 
     Ok(quote! {
         pub fn #function(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
@@ -557,14 +553,6 @@ fn generate_route_function(
 
             // Handler + optional middleware chain.
             #middleware_chain
-
-            let route =
-                g_server::route::Route::<_> {
-                    method: #method,
-                    endpoint: #endpoint,
-                    config,
-                    executor,
-                };
 
             let route_handler = move |
                 method: g_server::http::Method,
@@ -877,16 +865,12 @@ fn generate_group_route_function(
 
     let route_response = generate_route_response(&route.response_body);
 
-    let method = route.method.method_tokens();
-
-    let endpoint = &route.endpoint;
-
     // Route config starts from inherited global
     // config and overrides only explicitly declared
     // fields.
     let route_config = crate::config::generate_route_config(&route.config);
 
-    let registration = generate_route_registration(route.method);
+    let registration = generate_route_registration(route.method, &route.endpoint);
 
     Ok(quote! {
         pub fn #function(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
@@ -895,14 +879,6 @@ fn generate_group_route_function(
 
             // Handler + optional middleware chain.
             #middleware_chain
-
-            let route =
-                g_server::route::Route::<_> {
-                    method: #method,
-                    endpoint: #endpoint,
-                    config,
-                    executor,
-                };
 
             let route_handler = move |
                 method: g_server::http::Method,
@@ -1077,7 +1053,7 @@ fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenSt
         crate::response_body::ResponseBody::Json(ty) => {
             if matches!(ty, syn::Type::Tuple(t) if t.elems.is_empty()) {
                 quote! {
-                    let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+                    let res: g_server::Result<_, _> = executor.exec(cx, req).await;
                     match res {
                         Ok(resp) => resp.into_axum_json(),
                         Err(err) => err.into_axum_json(),
@@ -1085,7 +1061,7 @@ fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenSt
                 }
             } else {
                 quote! {
-                    let res: g_server::Result<#ty, _> = route.executor.exec(cx, req).await;
+                    let res: g_server::Result<#ty, _> = executor.exec(cx, req).await;
                     match res {
                         Ok(resp) => resp.into_axum_json(),
                         Err(err) => err.into_axum_json(),
@@ -1096,7 +1072,7 @@ fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenSt
 
         crate::response_body::ResponseBody::String => {
             quote! {
-                let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+                let res: g_server::Result<_, _> = executor.exec(cx, req).await;
                 match res {
                     Ok(resp) => resp.into_axum_string(),
                     Err(err) => err.into_axum_string(),
@@ -1106,7 +1082,7 @@ fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenSt
 
         crate::response_body::ResponseBody::Html => {
             quote! {
-                let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+                let res: g_server::Result<_, _> = executor.exec(cx, req).await;
                 match res {
                     Ok(resp) => resp.into_axum_html(),
                     Err(err) => err.into_axum_html(),
@@ -1116,7 +1092,7 @@ fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenSt
 
         crate::response_body::ResponseBody::Empty => {
             quote! {
-                let res: g_server::Result<(), _> = route.executor.exec(cx, req).await;
+                let res: g_server::Result<(), _> = executor.exec(cx, req).await;
                 match res {
                     Ok(resp) => resp.into_axum_empty(),
                     Err(err) => err.into_axum_empty(),
@@ -1130,53 +1106,53 @@ fn generate_route_response(body: &crate::response_body::ResponseBody) -> TokenSt
 // Axum routing
 // ============================================================
 
-fn generate_route_registration(method: crate::server::HttpMethod) -> TokenStream2 {
+fn generate_route_registration(method: crate::server::HttpMethod, endpoint: &Expr) -> TokenStream2 {
     match method {
         crate::server::HttpMethod::Get => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::get(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::get(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Post => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::post(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::post(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Put => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::put(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::put(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Patch => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::patch(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::patch(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Delete => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::delete(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::delete(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Options => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::options(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::options(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Head => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::head(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::head(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Trace => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::trace(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::trace(route_handler)))
             }
         }
 
@@ -1184,13 +1160,13 @@ fn generate_route_registration(method: crate::server::HttpMethod) -> TokenStream
         // `query` is represented by GET at the Axum layer.
         crate::server::HttpMethod::Query => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::get(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::get(route_handler)))
             }
         }
 
         crate::server::HttpMethod::Any => {
             quote! {
-                router.route(route.endpoint, __register_route_middlewares(&route.config, g_server::axum::routing::any(route_handler)))
+                router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::any(route_handler)))
             }
         }
     }

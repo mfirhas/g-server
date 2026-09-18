@@ -1,4 +1,4 @@
-use crate::{Config, Request, Response};
+use crate::{Request, Response};
 
 pub type Handler<C, P, Q, ReqB, Fut> = fn(cx: C, req: Request<P, Q, ReqB>) -> Fut;
 
@@ -71,14 +71,6 @@ impl<F> Executor<F> {
     {
         (self.func)(cx, req).await
     }
-}
-
-/// Route represents 1 endpoint execution.
-pub struct Route<F> {
-    pub method: HttpMethod,
-    pub endpoint: &'static str,
-    pub config: Config,
-    pub executor: Executor<F>,
 }
 
 pub async fn unimplemented_handler<C, P, Q, ReqB, ResB>(

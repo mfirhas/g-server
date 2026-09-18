@@ -441,12 +441,9 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
     // `logger` and `auth` come from list of middlewares defined in macro declaration. We register them in reverse order, meaning first in list executed first, declare last here.
     let executor = route::Executor::new(move |cx, req| logger(cx, req, executor));
     let executor = route::Executor::new(move |cx, req| auth(cx, req, executor));
-    let route = route::Route::<_> {
-        method: route::HttpMethod::Post, // from macro: route::HttpMethod::$expr -> method
-        endpoint: "/route_1/{user_id}/{user_email}",
-        config,
-        executor: executor,
-    };
+    let method = route::HttpMethod::Post; // from macro: route::HttpMethod::$expr -> method
+    let endpoint = "/route_1/{user_id}/{user_email}";
+    let executor = executor;
 
     let route_handler = move |
           axum::extract::State(cx): axum::extract::State<Context>, // `Context` comes from macro
@@ -463,66 +460,66 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
             body,
         };
 
-        match route.executor.exec(cx, req).await {
+        match executor.exec(cx, req).await {
             Ok(resp) => resp.into_axum_json(),
             Err(err) => err.into_axum_json(),
         }
     };
 
-    let router = match route.method {
+    let router = match method {
         route::HttpMethod::Get => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::get(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::get(route_handler)),
         ),
 
         route::HttpMethod::Post => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::post(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::post(route_handler)),
         ),
 
         route::HttpMethod::Put => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::put(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::put(route_handler)),
         ),
 
         route::HttpMethod::Patch => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::patch(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::patch(route_handler)),
         ),
 
         route::HttpMethod::Head => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::head(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::head(route_handler)),
         ),
 
         route::HttpMethod::Query => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::get(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::get(route_handler)),
         ),
 
         route::HttpMethod::Any => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::any(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::any(route_handler)),
         ),
 
         route::HttpMethod::Delete => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::delete(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::delete(route_handler)),
         ),
 
         route::HttpMethod::Options => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::options(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::options(route_handler)),
         ),
 
         route::HttpMethod::Trace => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::trace(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::trace(route_handler)),
         ),
 
         route::HttpMethod::Connect => router.route(
-            route.endpoint,
-            __register_route_middlewares(&route.config, axum::routing::connect(route_handler)),
+            endpoint,
+            __register_route_middlewares(&config, axum::routing::connect(route_handler)),
         ),
     };
 
@@ -532,21 +529,15 @@ pub fn __route_app_a_handler_1(router: axum::Router<Context>) -> axum::Router<Co
 // another handler within same server,
 // same rules applied.
 pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Context> {
-    let mut config = Config::empty();
-    config.timeout = Some(2000);
-
     let executor = route::Executor::new(handler_2);
     // We assemble middlewares from last to first: first in array execute first, so we declare last here to make it executed first.
     // We assemble these middlewares directly from macro declaration.
     // If no middlewares, straight to route.
     let executor = route::Executor::new(move |cx, req| logger(cx, req, executor));
     let executor = route::Executor::new(move |cx, req| auth(cx, req, executor));
-    let route = route::Route::<_> {
-        method: route::HttpMethod::Post,
-        endpoint: "/route_2",
-        config,
-        executor: executor,
-    };
+    let method = route::HttpMethod::Post;
+    let endpoint = "/route_2";
+    let executor = executor;
 
     let route_handler =
         move |axum::extract::State(cx): axum::extract::State<Context>,
@@ -562,7 +553,7 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
                 body,
             };
 
-            let res: g_server::Result<_, _> = route.executor.exec(cx, req).await;
+            let res: g_server::Result<_, _> = executor.exec(cx, req).await;
 
             match res {
                 Ok(resp) => resp.into_axum_json(),
@@ -570,38 +561,28 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
             }
         };
 
-    let router = match route.method {
-        route::HttpMethod::Get => router.route(route.endpoint, axum::routing::get(route_handler)),
+    let router = match method {
+        route::HttpMethod::Get => router.route(endpoint, axum::routing::get(route_handler)),
 
-        route::HttpMethod::Post => router.route(route.endpoint, axum::routing::post(route_handler)),
+        route::HttpMethod::Post => router.route(endpoint, axum::routing::post(route_handler)),
 
-        route::HttpMethod::Put => router.route(route.endpoint, axum::routing::put(route_handler)),
+        route::HttpMethod::Put => router.route(endpoint, axum::routing::put(route_handler)),
 
-        route::HttpMethod::Patch => {
-            router.route(route.endpoint, axum::routing::patch(route_handler))
-        }
+        route::HttpMethod::Patch => router.route(endpoint, axum::routing::patch(route_handler)),
 
-        route::HttpMethod::Head => router.route(route.endpoint, axum::routing::head(route_handler)),
+        route::HttpMethod::Head => router.route(endpoint, axum::routing::head(route_handler)),
 
-        route::HttpMethod::Query => router.route(route.endpoint, axum::routing::get(route_handler)),
+        route::HttpMethod::Query => router.route(endpoint, axum::routing::get(route_handler)),
 
-        route::HttpMethod::Any => router.route(route.endpoint, axum::routing::any(route_handler)),
+        route::HttpMethod::Any => router.route(endpoint, axum::routing::any(route_handler)),
 
-        route::HttpMethod::Delete => {
-            router.route(route.endpoint, axum::routing::delete(route_handler))
-        }
+        route::HttpMethod::Delete => router.route(endpoint, axum::routing::delete(route_handler)),
 
-        route::HttpMethod::Options => {
-            router.route(route.endpoint, axum::routing::options(route_handler))
-        }
+        route::HttpMethod::Options => router.route(endpoint, axum::routing::options(route_handler)),
 
-        route::HttpMethod::Trace => {
-            router.route(route.endpoint, axum::routing::trace(route_handler))
-        }
+        route::HttpMethod::Trace => router.route(endpoint, axum::routing::trace(route_handler)),
 
-        route::HttpMethod::Connect => {
-            router.route(route.endpoint, axum::routing::connect(route_handler))
-        }
+        route::HttpMethod::Connect => router.route(endpoint, axum::routing::connect(route_handler)),
     };
 
     router

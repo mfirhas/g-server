@@ -1,8 +1,6 @@
 use std::{collections::HashSet, fmt::Display};
 
-use proc_macro2::{Ident, TokenStream as TokenStream2};
-use quote::format_ident;
-use quote::quote;
+use proc_macro2::Ident;
 use syn::spanned::Spanned;
 use syn::{Expr, LitInt, LitStr, Result, Token, Type, braced, parse::ParseStream};
 
@@ -604,56 +602,6 @@ pub(crate) enum HttpMethod {
     Trace,
     Query,
     Any,
-}
-
-impl HttpMethod {
-    pub(crate) fn method_tokens(&self) -> TokenStream2 {
-        let ident = match self {
-            crate::server::HttpMethod::Get => {
-                format_ident!("Get")
-            }
-
-            crate::server::HttpMethod::Post => {
-                format_ident!("Post")
-            }
-
-            crate::server::HttpMethod::Put => {
-                format_ident!("Put")
-            }
-
-            crate::server::HttpMethod::Patch => {
-                format_ident!("Patch")
-            }
-
-            crate::server::HttpMethod::Delete => {
-                format_ident!("Delete")
-            }
-
-            crate::server::HttpMethod::Options => {
-                format_ident!("Options")
-            }
-
-            crate::server::HttpMethod::Head => {
-                format_ident!("Head")
-            }
-
-            crate::server::HttpMethod::Trace => {
-                format_ident!("Trace")
-            }
-
-            crate::server::HttpMethod::Query => {
-                format_ident!("Query")
-            }
-
-            crate::server::HttpMethod::Any => {
-                format_ident!("Any")
-            }
-        };
-
-        quote! {
-            g_server::route::HttpMethod::#ident
-        }
-    }
 }
 
 impl Display for HttpMethod {
