@@ -250,7 +250,7 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                             )),
                     );
                 },
-                (_, Some(err_handler)) => {},
+                (_, Some(_)) => {},
                 _ => {}
             }
 
@@ -347,7 +347,7 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                             )),
                     );
                 },
-                (_, Some(err_handler)) => {},
+                (_, Some(_)) => {},
                 _ => {}
             }
 

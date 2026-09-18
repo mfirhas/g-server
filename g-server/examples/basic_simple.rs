@@ -71,8 +71,9 @@ gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         config: {
             normalize_endpoint: true,
-            timeout: 1000,
-            timeout_error: text(Response::new().with_text("nganuus".into()))
+            // timeout: 1000,
+            timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
+            concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!".into())),
         }
         get: {
             endpoint: "/",
@@ -89,10 +90,17 @@ gserver! {
         group: {
             prefix: "/v1",
             config: {
-                concurrency_limit: 0,
+                concurrency_limit: 1,
+                concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("penuh!!".into())),
+                timeout: 10,
+                // timeout_error: text(Response::new().with_text("babi".into()))
             },
             members: [
                 get: {
+                    config: {
+                        concurrency_limit: 0,
+                        // concurrency_limit_error: html((StatusCode::TOO_MANY_REQUESTS, "<h1>OVERLOAD.........!!!!</h1>")),
+                    }
                     endpoint: "/test",
                     request_body: json(p::PostRequest),
                     handler: p::post,
