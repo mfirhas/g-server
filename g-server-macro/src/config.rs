@@ -101,29 +101,29 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             .as_str(),
                         );
                         return quote! {
-                            global_config.#field = Some(|| #err_resp.into_axum_json());
+                            global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_json());
                         };
                     }
                     Some("Text") | Some("String") | Some("text") | Some("string") => {
                         let err_resp: &Expr = &call.args.get(0).expect(
                             format!(
-                                "root config field `{}` requires value of `text(g_server::Response<T: ::serde::Serialize>)`, or `string(...)`", &field.to_string().as_str()
+                                "root config field `{}` requires value of `text(g_server::Response<T: Display>)`, or `string(...)`", &field.to_string().as_str()
                             )
                             .as_str(),
                         );
                         return quote! {
-                            global_config.#field = Some(|| #err_resp.into_axum_string());                  
+                            global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_string());                  
                         };
                     },
                     Some("Html") | Some("html") => {
                         let err_resp: &Expr = &call.args.get(0).expect(
                             format!(
-                                "root config field `{}` requires value of `html(g_server::Response<T: ::serde::Serialize>)`", &field.to_string().as_str()
+                                "root config field `{}` requires value of `html(g_server::Response<T: Display>)`", &field.to_string().as_str()
                             )
                             .as_str(),
                         );
                         return quote! {
-                            global_config.#field = Some(|| #err_resp.into_axum_html()); 
+                            global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_html()); 
                         };
                     },
                     _ => {
@@ -171,7 +171,7 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             .as_str(),
                         );
                         return quote! {
-                            config.#field = Some(|| #err_resp.into_axum_json());
+                            config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_json());
                         };
                     }
                     Some("Text") | Some("String") | Some("text") | Some("string") => {
@@ -182,7 +182,7 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             .as_str(),
                         );
                         return quote! {
-                            config.#field = Some(|| #err_resp.into_axum_string()); 
+                            config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_string());
                         };
                     },
                     Some("Html") | Some("html") => {
@@ -193,7 +193,7 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             .as_str(),
                         );
                         return quote! {
-                            config.#field = Some(|| #err_resp.into_axum_html());
+                            config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_html());
                         };
                     },
                     _ => {
