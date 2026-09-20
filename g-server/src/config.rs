@@ -16,6 +16,8 @@ pub struct Config {
     pub timeout_error: Option<fn() -> ::axum::response::Response>,
     /// Custom concurrency limit error
     pub concurrency_limit_error: Option<fn() -> ::axum::response::Response>,
+    /// Custom bad request error
+    pub bad_request_error: Option<fn() -> ::axum::response::Response>,
 }
 
 impl Config {

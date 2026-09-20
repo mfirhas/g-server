@@ -30,7 +30,10 @@ impl Response {
         self
     }
 
-    pub fn with_text(mut self, body: String) -> Response<String> {
+    pub fn with_text<S>(mut self, body: S) -> Response<S>
+    where
+        S: Display,
+    {
         self.headers.insert(
             crate::http::header::CONTENT_TYPE,
             crate::http::HeaderValue::from_static("text/plain; charset=utf-8"),
@@ -42,7 +45,10 @@ impl Response {
         }
     }
 
-    pub fn with_html(mut self, body: String) -> Response<String> {
+    pub fn with_html<S>(mut self, body: S) -> Response<S>
+    where
+        S: Display,
+    {
         self.headers.insert(
             crate::http::header::CONTENT_TYPE,
             crate::http::HeaderValue::from_static("text/html; charset=utf-8"),

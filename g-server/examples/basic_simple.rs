@@ -67,13 +67,19 @@ async fn id2(_: (), req: Request<Path2>) -> Result<Response<String>, Response<St
     Ok(Response::new().with_text(format!("~ {}", req.path_params.user_id)))
 }
 
+#[allow(dead_code)]
+fn root_bad_request_error() -> (StatusCode, &'static str) {
+    (StatusCode::BAD_REQUEST, "bad request!!!!!!!!")
+}
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         config: {
             normalize_endpoint: true,
             // timeout: 1000,
             timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
-            concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!".into())),
+            concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!")),
+            // bad_request_error: text(root_bad_request_error()),
         }
         get: {
             endpoint: "/",
@@ -91,7 +97,7 @@ gserver! {
             prefix: "/v1",
             config: {
                 concurrency_limit: 1,
-                concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("penuh!!".into())),
+                concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("penuh!!")),
                 timeout: 10,
                 // timeout_error: text(Response::new().with_text("babi".into()))
             },
@@ -123,6 +129,7 @@ gserver! {
             config: {
                 timeout: 1,
                 // timeout_error: text(Response::new().with_text("asdasd".into()))
+                bad_request_error: html((StatusCode::BAD_REQUEST, "<h1>BAD REQUEST</h1>"))
             }
             request_body: json(p::PostRequest),
             handler: p::post,

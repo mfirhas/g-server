@@ -532,9 +532,6 @@ fn generate_route_function(
         .map(|ty| quote!(#ty))
         .unwrap_or_else(|| quote!(()));
 
-    // OPTIONAL request body.
-    let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
-
     let handler_chain = generate_handler_chain(&route.middlewares, handler);
 
     let route_response = generate_route_response(&route.response_body);
@@ -544,6 +541,10 @@ fn generate_route_function(
     // fields.
     let route_config = crate::config::generate_route_config(&route.config);
 
+    let input_extractor = generate_input_extractor(route, path_ty, query_ty, &route.request_body);
+
+    let bad_request_handler = generate_bad_request_error_handler(route, &route.request_body);
+
     let registration = generate_route_registration(route.method, &route.endpoint);
 
     let handler_registration = generate_handler_registration(
@@ -551,9 +552,8 @@ fn generate_route_function(
         context_ty,
         route_config,
         handler_chain,
-        path_ty,
-        query_ty,
-        body_extractor,
+        input_extractor,
+        bad_request_handler,
         route_response,
         registration,
     );
@@ -566,9 +566,8 @@ fn generate_handler_registration(
     context_ty: TokenStream2,
     route_config: TokenStream2,
     handler_chain: TokenStream2,
-    path_ty: TokenStream2,
-    query_ty: TokenStream2,
-    body_extractor: TokenStream2,
+    input_extractor: TokenStream2,
+    bad_request_handler: TokenStream2,
     route_response: TokenStream2,
     registration: TokenStream2,
 ) -> TokenStream2 {
@@ -587,14 +586,10 @@ fn generate_handler_registration(
 
                 headers: g_server::axum::http::HeaderMap,
 
-                g_server::axum::extract::Path(path_params):
-                    g_server::axum::extract::Path<#path_ty>,
-
-                g_server::axum::extract::Query(query_params):
-                    g_server::axum::extract::Query<#query_ty>,
-
-                #body_extractor
+                #input_extractor
             | async move {
+                #bad_request_handler
+
                 let req = g_server::Request {
                     method: method.into(),
                     headers,
@@ -884,9 +879,6 @@ fn generate_group_route_function(
         .map(|ty| quote!(#ty))
         .unwrap_or_else(|| quote!(()));
 
-    // OPTIONAL request body.
-    let body_extractor = crate::axum_impl::generate_body_extractor(&route.request_body);
-
     let handler_chain = generate_handler_chain(middlewares, handler);
 
     let route_response = generate_route_response(&route.response_body);
@@ -896,6 +888,10 @@ fn generate_group_route_function(
     // fields.
     let route_config = crate::config::generate_route_config(&route.config);
 
+    let input_extractor = generate_input_extractor(route, path_ty, query_ty, &route.request_body);
+
+    let bad_request_handler = generate_bad_request_error_handler(route, &route.request_body);
+
     let registration = generate_route_registration(route.method, &route.endpoint);
 
     let handler_registration = generate_handler_registration(
@@ -903,9 +899,8 @@ fn generate_group_route_function(
         context_ty,
         route_config,
         handler_chain,
-        path_ty,
-        query_ty,
-        body_extractor,
+        input_extractor,
+        bad_request_handler,
         route_response,
         registration,
     );
@@ -913,46 +908,203 @@ fn generate_group_route_function(
     Ok(handler_registration)
 }
 
-pub(crate) fn generate_body_extractor(body: &Option<RequestBody>) -> TokenStream2 {
-    match body {
-        // JSON body:
-        //
-        // request_body: Json(MyStruct)
-        Some(RequestBody::Json(ty)) => {
-            quote! {
-                g_server::axum::extract::Json(body):
-                    g_server::axum::extract::Json<#ty>,
-            }
+fn generate_input_extractor(
+    route: &crate::route::Route,
+    path_ty: TokenStream2,
+    query_ty: TokenStream2,
+    body: &Option<RequestBody>,
+) -> TokenStream2 {
+    let path_query_token = if route
+        .config
+        .iter()
+        .any(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_BAD_REQUEST_ERROR)
+    {
+        quote! {
+            path_params: std::result::Result<g_server::axum::extract::Path<#path_ty>, g_server::axum::extract::rejection::PathRejection>,
+            query_params: std::result::Result<g_server::axum::extract::Query<#query_ty>, g_server::axum::extract::rejection::QueryRejection>,
         }
+    } else {
+        quote! {
+            g_server::axum::extract::Path(path_params): g_server::axum::extract::Path<#path_ty>,
+            g_server::axum::extract::Query(query_params): g_server::axum::extract::Query<#query_ty>,
+        }
+    };
 
-        // Form body:
-        //
-        // request_body: Form(MyStruct)
-        Some(RequestBody::Form(ty)) => {
-            quote! {
-                g_server::axum::extract::Form(body):
-                    g_server::axum::extract::Form<#ty>,
+    let input = if route
+        .config
+        .iter()
+        .any(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_BAD_REQUEST_ERROR)
+    {
+        match body {
+            // JSON body:
+            //
+            // request_body: Json(MyStruct)
+            Some(RequestBody::Json(ty)) => {
+                quote! {
+                    #path_query_token
+                    body: std::result::Result<g_server::axum::extract::Json<#ty>, g_server::axum::extract::rejection::JsonRejection>,
+                }
             }
-        }
 
-        // String body:
-        //
-        // request_body: String
-        Some(RequestBody::String) => {
-            quote! {
-                body: String,
+            // Form body:
+            //
+            // request_body: Form(MyStruct)
+            Some(RequestBody::Form(ty)) => {
+                quote! {
+                    #path_query_token
+                    body: std::result::Result<g_server::axum::extract::Form<#ty>, g_server::axum::extract::rejection::FormRejection>,
+                }
             }
-        }
 
-        // No request_body:
-        //
-        // body is simply ().
-        None => {
-            quote! {
-                body: (),
+            // String body:
+            //
+            // request_body: String
+            Some(RequestBody::String) => {
+                quote! {
+                    #path_query_token
+                    body: std::result::Result<String, g_server::axum::extract::rejection::StringRejection>,
+                }
+            }
+
+            // No request_body:
+            //
+            // body is simply ().
+            None => {
+                quote! {
+                    #path_query_token
+                    body: (),
+                }
             }
         }
+    } else {
+        match body {
+            // JSON body:
+            //
+            // request_body: Json(MyStruct)
+            Some(RequestBody::Json(ty)) => {
+                quote! {
+                    #path_query_token
+                    g_server::axum::extract::Json(body):
+                        g_server::axum::extract::Json<#ty>,
+                }
+            }
+
+            // Form body:
+            //
+            // request_body: Form(MyStruct)
+            Some(RequestBody::Form(ty)) => {
+                quote! {
+                    #path_query_token
+                    g_server::axum::extract::Form(body):
+                        g_server::axum::extract::Form<#ty>,
+                }
+            }
+
+            // String body:
+            //
+            // request_body: String
+            Some(RequestBody::String) => {
+                quote! {
+                    #path_query_token
+                    body: String,
+                }
+            }
+
+            // No request_body:
+            //
+            // body is simply ().
+            None => {
+                quote! {
+                    #path_query_token
+                    body: (),
+                }
+            }
+        }
+    };
+
+    input
+}
+
+fn generate_bad_request_error_handler(
+    route: &crate::route::Route,
+    body: &Option<RequestBody>,
+) -> TokenStream2 {
+    if route
+        .config
+        .iter()
+        .any(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_BAD_REQUEST_ERROR)
+    {
+        let body_bad_request_error_handler = match body {
+            // JSON body:
+            //
+            // request_body: Json(MyStruct)
+            Some(RequestBody::Json(_)) => {
+                quote! {
+                    let body = match body {
+                        Ok(g_server::axum::extract::Json(body)) => body,
+                        Err(_) => return (config.bad_request_error.unwrap_or(
+                            || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(),
+                    };
+                }
+            }
+
+            // Form body:
+            //
+            // request_body: Form(MyStruct)
+            Some(RequestBody::Form(_)) => {
+                quote! {
+                    let body = match body {
+                        Ok(g_server::axum::extract::Form(body)) => body,
+                        Err(_) => return (config.bad_request_error.unwrap_or(
+                            || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(),
+                    };
+                }
+            }
+
+            // String body:
+            //
+            // request_body: String
+            Some(RequestBody::String) => {
+                quote! {
+                    let body = match body {
+                        Ok(body) => body,
+                        Err(_) => return (config.bad_request_error.unwrap_or(
+                            || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(),
+                    };
+                }
+            }
+
+            // No request_body:
+            //
+            // body is simply ().
+            None => {
+                quote! {}
+            }
+        };
+
+        return quote! {
+            let path_params = match path_params {
+                Ok(g_server::axum::extract::Path(path_params)) => path_params,
+                Err(_) => return (config.bad_request_error.unwrap_or(
+                    || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                ))(),
+            };
+
+            let query_params = match query_params {
+                Ok(g_server::axum::extract::Query(query_params)) => query_params,
+                Err(_) => return (config.bad_request_error.unwrap_or(
+                    || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                ))(),
+            };
+
+            #body_bad_request_error_handler
+        };
     }
+
+    quote! {}
 }
 
 // ============================================================
