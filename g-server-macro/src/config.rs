@@ -13,9 +13,7 @@ pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit
 pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
 
 /// Configs that only allowed in server's root.
-pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
-    CONFIG_FIELD_NORMALIZE_ENDPOINT,
-];
+pub(crate) static GLOBAL_CONFIGS: &[&str] = &[CONFIG_FIELD_NORMALIZE_ENDPOINT];
 
 pub(crate) static CUSTOM_ERRORS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
@@ -102,9 +100,15 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        return quote! {
-                            global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_json());
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_json());
+                            }
+                        } else {
+                            return quote! {
+                                global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_json());
+                            }
+                        }
                     }
                     Some("Text") | Some("String") | Some("text") | Some("string") => {
                         let err_resp: &Expr = &call.args.get(0).expect(
@@ -113,9 +117,15 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        return quote! {
-                            global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_string());                  
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_string());
+                            }
+                        } else {
+                            return quote! {
+                                global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_string());
+                            }
+                        }
                     },
                     Some("Html") | Some("html") => {
                         let err_resp: &Expr = &call.args.get(0).expect(
@@ -124,22 +134,39 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        return quote! {
-                            global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_html()); 
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_html());
+                            }
+                        } else {
+                            return quote! {
+                                global_config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_html());
+                            }
+                        }
                     },
                     _ => {
-                        // should be unreachable if validated properly.
-                        return quote! {
-                            global_config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                global_config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                            }
+                        } else {
+                            return quote! {
+                                global_config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                            }
                         }
                     }
                 }
             }
 
-            return quote! {
-                config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
-            };
+            if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                return quote! {
+                    global_config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                }
+            } else {
+                return quote! {
+                    global_config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                }
+            }
         }
 
         quote! {
@@ -172,9 +199,15 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        return quote! {
-                            config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_json());
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_json());
+                            }
+                        } else {
+                            return quote! {
+                                config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_json());
+                            }
+                        }
                     }
                     Some("Text") | Some("String") | Some("text") | Some("string") => {
                         let err_resp: &Expr = &call.args.get(0).expect(
@@ -183,9 +216,15 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        return quote! {
-                            config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_string());
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_string());
+                            }
+                        } else {
+                            return quote! {
+                                config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_string());
+                            }
+                        }
                     },
                     Some("Html") | Some("html") => {
                         let err_resp: &Expr = &call.args.get(0).expect(
@@ -194,22 +233,39 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        return quote! {
-                            config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_html());
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_html());
+                            }
+                        } else {
+                            return quote! {
+                                config.#field = Some(|| Into::<Response<_>>::into(#err_resp).into_axum_html());
+                            }
+                        }
                     },
                     _ => {
-                        // should be unreachable if validated properly.
-                        return quote! {
-                            config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
-                        };
+                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                            return quote! {
+                                config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                            }
+                        } else {
+                            return quote! {
+                                config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                            }
+                        }
                     }
                 }
             }
 
-            return quote! {
-                config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
-            };
+            if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                return quote! {
+                    config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                }
+            } else {
+                return quote! {
+                    config.#field = Some(|| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
+                }
+            }
         }
 
         quote! {
@@ -308,14 +364,20 @@ impl ConfigEntry {
         {
             match p.path.get_ident().map(|i| i.to_string()).as_deref() {
                 Some("Json") | Some("json") => {}
-                Some("Text") | Some("String") | Some("text") | Some("string") => {},
-                Some("Html") | Some("html") => {},
+                Some("Text") | Some("String") | Some("text") | Some("string") => {}
+                Some("Html") | Some("html") => {}
                 _ => {
-                    return Err(syn::Error::new(value.span(), "expected values: json(T), text(T), html(T), or ()"))
+                    return Err(syn::Error::new(
+                        value.span(),
+                        "expected values: json(T), text(T), html(T), or ()",
+                    ));
                 }
             }
         } else {
-            return Err(syn::Error::new(value.span(), "invalid custom errors values, expected values: json(T), text(T), html(T)"))
+            return Err(syn::Error::new(
+                value.span(),
+                "invalid custom errors values, expected values: json(T), text(T), html(T)",
+            ));
         }
 
         Ok(())

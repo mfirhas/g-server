@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use g_server::{
     Request, Response, gserver,
     http::{HeaderMap, StatusCode},
@@ -72,6 +74,18 @@ fn root_bad_request_error() -> (StatusCode, &'static str) {
     (StatusCode::BAD_REQUEST, "bad request!!!!!!!!")
 }
 
+struct BadReq(String);
+impl g_server::BadRequestErrorMessage for BadReq {
+    fn bad_request_err_msg(self, err: &str) -> Self {
+        BadReq(format!("{}: {}", self.0, err))
+    }
+}
+impl Display for BadReq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         config: {
@@ -79,7 +93,7 @@ gserver! {
             // timeout: 1000,
             timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
             concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!")),
-            // bad_request_error: text(root_bad_request_error()),
+            bad_request_error: text(root_bad_request_error()),
         }
         get: {
             endpoint: "/",
@@ -129,7 +143,7 @@ gserver! {
             config: {
                 timeout: 1,
                 // timeout_error: text(Response::new().with_text("asdasd".into()))
-                bad_request_error: html((StatusCode::BAD_REQUEST, "<h1>BAD REQUEST</h1>"))
+                bad_request_error: html((StatusCode::BAD_REQUEST, BadReq("<h1>BAD REQUEST</h1>".into())))
             }
             request_body: json(p::PostRequest),
             handler: p::post,

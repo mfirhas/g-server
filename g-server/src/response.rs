@@ -188,3 +188,32 @@ impl From<StatusCode> for Response {
         }
     }
 }
+
+pub trait BadRequestErrorMessage: Sized {
+    fn bad_request_err_msg(self, err: &str) -> Self;
+}
+
+impl<E> BadRequestErrorMessage for Response<E>
+where
+    E: BadRequestErrorMessage,
+{
+    fn bad_request_err_msg(self, err: &str) -> Self {
+        Self {
+            status: self.status,
+            headers: self.headers,
+            body: self.body.bad_request_err_msg(err),
+        }
+    }
+}
+
+impl BadRequestErrorMessage for String {
+    fn bad_request_err_msg(self, _: &str) -> Self {
+        self
+    }
+}
+
+impl BadRequestErrorMessage for &'static str {
+    fn bad_request_err_msg(self, _: &str) -> Self {
+        self
+    }
+}

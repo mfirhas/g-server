@@ -58,6 +58,7 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
     Ok(quote! {
         use g_server::axum::response::IntoResponse;
+        use g_server::BadRequestErrorMessage;
 
         #main
 
@@ -1042,9 +1043,9 @@ fn generate_bad_request_error_handler(
                 quote! {
                     let body = match body {
                         Ok(g_server::axum::extract::Json(body)) => body,
-                        Err(_) => return (config.bad_request_error.unwrap_or(
-                            || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
-                        ))(),
+                        Err(err) => return (config.bad_request_error.unwrap_or(
+                            |_| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(err.body_text().as_str()),
                     };
                 }
             }
@@ -1056,9 +1057,9 @@ fn generate_bad_request_error_handler(
                 quote! {
                     let body = match body {
                         Ok(g_server::axum::extract::Form(body)) => body,
-                        Err(_) => return (config.bad_request_error.unwrap_or(
-                            || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
-                        ))(),
+                        Err(err) => return (config.bad_request_error.unwrap_or(
+                            |_| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(err.body_text().as_str()),
                     };
                 }
             }
@@ -1070,9 +1071,9 @@ fn generate_bad_request_error_handler(
                 quote! {
                     let body = match body {
                         Ok(body) => body,
-                        Err(_) => return (config.bad_request_error.unwrap_or(
-                            || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
-                        ))(),
+                        Err(err) => return (config.bad_request_error.unwrap_or(
+                            |_| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(err.body_text().as_str()),
                     };
                 }
             }
@@ -1088,16 +1089,16 @@ fn generate_bad_request_error_handler(
         return quote! {
             let path_params = match path_params {
                 Ok(g_server::axum::extract::Path(path_params)) => path_params,
-                Err(_) => return (config.bad_request_error.unwrap_or(
-                    || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
-                ))(),
+                Err(err) => return (config.bad_request_error.unwrap_or(
+                    |_| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                ))(err.body_text().as_str()),
             };
 
             let query_params = match query_params {
                 Ok(g_server::axum::extract::Query(query_params)) => query_params,
-                Err(_) => return (config.bad_request_error.unwrap_or(
-                    || g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
-                ))(),
+                Err(err) => return (config.bad_request_error.unwrap_or(
+                    |_| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                ))(err.body_text().as_str()),
             };
 
             #body_bad_request_error_handler
