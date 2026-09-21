@@ -546,6 +546,8 @@ fn generate_route_function(
 
     let bad_request_handler = generate_bad_request_error_handler(route, &route.request_body);
 
+    let form_data_parsing = generate_form_data_parsing(&route.request_body);
+
     let registration = generate_route_registration(route.method, &route.endpoint);
 
     let handler_registration = generate_handler_registration(
@@ -555,6 +557,7 @@ fn generate_route_function(
         handler_chain,
         input_extractor,
         bad_request_handler,
+        form_data_parsing,
         route_response,
         registration,
     );
@@ -569,6 +572,7 @@ fn generate_handler_registration(
     handler_chain: TokenStream2,
     input_extractor: TokenStream2,
     bad_request_handler: TokenStream2,
+    form_data_parsing: TokenStream2,
     route_response: TokenStream2,
     registration: TokenStream2,
 ) -> TokenStream2 {
@@ -590,6 +594,8 @@ fn generate_handler_registration(
                 #input_extractor
             | async move {
                 #bad_request_handler
+
+                #form_data_parsing
 
                 let req = g_server::Request {
                     method: method.into(),
@@ -893,6 +899,8 @@ fn generate_group_route_function(
 
     let bad_request_handler = generate_bad_request_error_handler(route, &route.request_body);
 
+    let form_data_parsing = generate_form_data_parsing(&route.request_body);
+
     let registration = generate_route_registration(route.method, &route.endpoint);
 
     let handler_registration = generate_handler_registration(
@@ -902,6 +910,7 @@ fn generate_group_route_function(
         handler_chain,
         input_extractor,
         bad_request_handler,
+        form_data_parsing,
         route_response,
         registration,
     );
@@ -957,6 +966,13 @@ fn generate_input_extractor(
                 }
             }
 
+            Some(RequestBody::FormData(_)) => {
+                quote! {
+                    #path_query_token
+                    multipart: std::result::Result<g_server::axum::extract::Multipart, g_server::axum::extract::multipart::MultipartRejection>,
+                }
+            }
+
             // String body:
             //
             // request_body: String
@@ -998,6 +1014,13 @@ fn generate_input_extractor(
                     #path_query_token
                     g_server::axum::extract::Form(body):
                         g_server::axum::extract::Form<#ty>,
+                }
+            }
+
+            Some(RequestBody::FormData(_)) => {
+                quote! {
+                    #path_query_token
+                    mut multipart: g_server::axum::extract::Multipart,
                 }
             }
 
@@ -1064,6 +1087,17 @@ fn generate_bad_request_error_handler(
                 }
             }
 
+            Some(RequestBody::FormData(_)) => {
+                quote! {
+                    let mut multipart = match multipart {
+                        Ok(body) => body,
+                        Err(err) => return (config.bad_request_error.unwrap_or(
+                            |_| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text("g-server: bad request, sir!").into_axum_string()
+                        ))(err.body_text().as_str()),
+                    };
+                }
+            }
+
             // String body:
             //
             // request_body: String
@@ -1102,6 +1136,90 @@ fn generate_bad_request_error_handler(
             };
 
             #body_bad_request_error_handler
+        };
+    }
+
+    quote! {}
+}
+
+fn generate_form_data_parsing(body: &Option<RequestBody>) -> TokenStream2 {
+    if let Some(formdata) = body
+        && let RequestBody::FormData(ty) = formdata
+    {
+        return quote! {
+            let mut body: g_server::multipart::FormData<#ty> = g_server::multipart::FormData::empty();
+            let mut fields = Vec::<(String, String)>::new();
+            let mut files = Vec::<g_server::multipart::Data>::new();
+            while let Some(field) = match multipart.next_field().await {
+                Ok(field) => field,
+                Err(err) => return (config.bad_request_error.unwrap_or(
+                    |err| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text(format!("g-server: error while reading form-data fields: {}", err)).into_axum_string()
+                ))(err.to_string().as_str())
+            } {
+                let name = match field.name() {
+                    Some(name) => name.to_owned(),
+                    None => return (config.bad_request_error.unwrap_or(
+                                |err| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text(format!("{}", err)).into_axum_string()
+                            ))("g-server: multipart form-data field name is required")
+                };
+
+                let filename = field.file_name().map(str::to_owned);
+                let content_type = field.content_type().map(str::to_owned);
+
+                if let Some(filename) = filename {
+                    let bytes = match field.bytes().await {
+                        Ok(bytes) => bytes,
+                        Err(err) => {
+                            return (config.bad_request_error.unwrap_or(
+                                |err| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text(format!("g-server: filename exists, but failed reading file: {}", err)).into_axum_string()
+                            ))(err.to_string().as_str())
+                        }
+                    };
+
+                    files.push(g_server::multipart::Data {
+                        name,
+                        filename: Some(filename),
+                        content_type,
+                        file: bytes,
+                    });
+                } else {
+                    let value = match field.text().await {
+                        Ok(value) => value,
+                        Err(err) => {
+                            return (config.bad_request_error.unwrap_or(
+                                |err| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text(format!("g-server: failed reading form-data text fields: {}", err)).into_axum_string()
+                            ))(err.to_string().as_str())
+                        }
+                    };
+
+                    fields.push((name, value));
+                }
+            }
+
+            let form = if !fields.is_empty() {
+                let encoded = match g_server::serde_urlencoded::to_string(&fields) {
+                    Ok(encoded) => encoded,
+                    Err(err) => return (config.bad_request_error.unwrap_or(
+                                        |err| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text(format!("g-server: failed encoding form-data text fields: {}", err)).into_axum_string()
+                                    ))(err.to_string().as_str())
+                };
+
+                let form = match g_server::serde_urlencoded::from_str::<#ty>(&encoded) {
+                    Ok(form) => form,
+                    Err(err) => return (config.bad_request_error.unwrap_or(
+                                        |err| g_server::Response::new().with_status(g_server::StatusCode::BAD_REQUEST).with_text(format!("g-server: failed parsing encoded form-data text fields: {}", err)).into_axum_string()
+                                    ))(err.to_string().as_str())
+                };
+
+                Some(form)
+            } else {
+                None
+            };
+
+            body.form = form;
+            if !files.is_empty() {
+                body.data = Some(files);
+            }
         };
     }
 

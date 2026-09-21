@@ -564,7 +564,7 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
     let router = match method {
         route::HttpMethod::Get => router.route(endpoint, axum::routing::get(route_handler)),
 
-        route::HttpMethod::Post => router.route(endpoint, axum::routing::post(route_handler)),
+        route::HttpMethod::Post => router.route(endpoint, axum::routing::post(upload2)),
 
         route::HttpMethod::Put => router.route(endpoint, axum::routing::put(route_handler)),
 
@@ -586,4 +586,39 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
     };
 
     router
+}
+
+use g_server::axum::extract::Multipart;
+use g_server::axum::response::IntoResponse;
+
+async fn upload(mut multipart: Multipart) -> impl IntoResponse {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap_or_default().to_owned();
+        let file_name = field.file_name().map(str::to_owned);
+        let content_type = field.content_type().map(str::to_owned);
+
+        if let Some(file_name) = file_name {
+            let bytes = field.bytes().await.unwrap();
+
+            println!(
+                "file: name={name}, filename={file_name}, content_type={content_type:?}, size={}",
+                bytes.len()
+            );
+        } else {
+            let value = field.text().await.unwrap();
+
+            println!("field: name={name}, value={value}");
+        }
+    }
+
+    "OK"
+}
+
+async fn upload2(
+    ret: std::result::Result<
+        g_server::axum::extract::Multipart,
+        g_server::axum::extract::multipart::MultipartRejection,
+    >,
+) -> impl IntoResponse {
+    "OK"
 }

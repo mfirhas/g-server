@@ -10,8 +10,24 @@ async fn ping(_: (), _: Request) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text("pong".into()))
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct UploadForm {
+    name: String,
+    user_id: u64,
+}
+
+async fn upload(
+    _: (),
+    req: g_server::multipart::FormDataRequest<(), (), UploadForm>,
+) -> Result<Response<String>, Response<String>> {
+    dbg!(&req.body);
+    Ok(Response::new().with_text("upload finished".into()))
+}
+
 mod p {
     use super::*;
+
     #[derive(Debug, Deserialize)]
     pub struct PostRequest {
         user_id: u64,
@@ -91,9 +107,10 @@ gserver! {
         config: {
             normalize_endpoint: true,
             // timeout: 1000,
+            body_limit: 1,
             timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
             concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!")),
-            bad_request_error: text(root_bad_request_error()),
+            // bad_request_error: text((StatusCode::BAD_REQUEST, BadReq("this".into()))),
         }
         get: {
             endpoint: "/",
@@ -141,6 +158,7 @@ gserver! {
         post: {
             endpoint: "/post",
             config: {
+                // body_limit: 1,
                 timeout: 1,
                 // timeout_error: text(Response::new().with_text("asdasd".into()))
                 bad_request_error: html((StatusCode::BAD_REQUEST, BadReq("<h1>BAD REQUEST</h1>".into())))
@@ -165,6 +183,16 @@ gserver! {
             endpoint: "/baby",
             handler: put,
             response_body: empty,
+        }
+
+        post: {
+            endpoint: "/upload",
+            config: {
+                // body_limit: 1
+                // bad_request_error: html((StatusCode::BAD_REQUEST, BadReq("<h1>BAD REQUEST</h1>".into())))
+            }
+            request_body: form_data(UploadForm),
+            handler: upload,
         }
 
         get: {

@@ -27,6 +27,15 @@ pub(crate) fn parse_request_body(input: ParseStream<'_>) -> Result<RequestBody> 
             Ok(RequestBody::Form(ty))
         }
 
+        "FormData" | "form_data" => {
+            let body;
+            syn::parenthesized!(body in input);
+
+            let ty: Type = body.parse()?;
+
+            Ok(RequestBody::FormData(ty))
+        }
+
         _ => Err(syn::Error::new(
             kind.span(),
             "expected `String`, `Json(Type)`, or `Form(Type)`",
@@ -41,6 +50,9 @@ pub(crate) enum RequestBody {
 
     // Form(StructType)
     Form(Type),
+
+    // FormData(StructType), for multipart/form-data
+    FormData(Type),
 
     // String
     String,

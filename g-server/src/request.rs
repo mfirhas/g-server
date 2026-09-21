@@ -1,4 +1,4 @@
-use crate::{HttpMethod, http::HeaderMap};
+use crate::{HeaderMap, HttpMethod};
 
 #[derive(Debug, Clone)]
 pub struct Request<PathParams = (), QueryParams = (), Body = ()> {
@@ -10,22 +10,33 @@ pub struct Request<PathParams = (), QueryParams = (), Body = ()> {
 }
 
 pub mod multipart {
-    #[derive(Debug)]
-    pub struct Multipart {
-        pub fields: Vec<MultipartField>,
+    use super::Request;
+    use crate::Bytes;
+
+    pub type FormDataRequest<PathParams, QueryParams, NonBinaryForm> =
+        Request<PathParams, QueryParams, FormData<NonBinaryForm>>;
+
+    #[derive(Debug, Clone)]
+    pub struct FormData<T> {
+        pub form: Option<T>,
+        pub data: Option<Vec<Data>>,
     }
 
-    #[derive(Debug)]
-    pub struct MultipartField {
-        pub name: Option<String>,
+    impl<T> FormData<T> {
+        #[inline]
+        pub fn empty() -> Self {
+            Self {
+                form: None,
+                data: None,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct Data {
+        pub name: String,
         pub filename: Option<String>,
         pub content_type: Option<String>,
-        pub value: MultipartValue,
-    }
-
-    #[derive(Debug)]
-    pub enum MultipartValue {
-        Text(String),
-        File(Vec<u8>),
+        pub file: Bytes,
     }
 }
