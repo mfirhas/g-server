@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 struct Context;
 impl Context {
     pub(crate) async fn init() -> std::result::Result<Self, String> {
-        // Ok(Self)
-        Err(String::from("sdfsdf"))
+        Ok(Self)
+        // Err(String::from("sdfsdf"))
     }
 }
 
