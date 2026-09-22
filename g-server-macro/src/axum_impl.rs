@@ -99,12 +99,20 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     }
 
     let initializers = servers.iter().map(|server| {
+        let server_name = &server.name;
+
         let name = server_ident(server);
 
         let init = init_ident(server);
 
         quote! {
-            let #name = #init();
+            let #name = match #init().await {
+                Ok(ctx) => ctx,
+                Err(err) => {
+                    eprintln!("g-server: failed initializing context of `{}`: {}", #server_name, err);
+                    return;
+                },
+            };
         }
     });
 
@@ -447,8 +455,7 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
 
     let context_init = match server.body.context.as_ref() {
         Some(ty) => quote! {
-            let context =
-                <#ty>::init();
+            let context = <#ty>::init().await.map_err(|err| err.to_string())?;
         },
 
         None => quote! {
@@ -476,10 +483,7 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
     });
 
     Ok(quote! {
-        pub fn #init() -> (
-            g_server::Server,
-            g_server::axum::Router<()>,
-        ) {
+        pub async fn #init() -> std::result::Result<(g_server::Server, g_server::axum::Router<()>), String> {
             let server =
                 g_server::Server {
                     name: #name,
@@ -504,7 +508,7 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
 
             let router = router.with_state(context);
 
-            (server, router)
+            Ok((server, router))
         }
     })
 }

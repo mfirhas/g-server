@@ -6,7 +6,16 @@ use g_server::{
 };
 use serde::{Deserialize, Serialize};
 
-async fn ping(_: (), _: Request) -> Result<Response<String>, Response<String>> {
+#[derive(Clone)]
+struct Context;
+impl Context {
+    pub(crate) async fn init() -> std::result::Result<Self, String> {
+        // Ok(Self)
+        Err(String::from("sdfsdf"))
+    }
+}
+
+async fn ping(_: Context, _: Request) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text("pong".into()))
 }
 
@@ -18,7 +27,7 @@ struct UploadForm {
 }
 
 async fn upload(
-    _: (),
+    _: Context,
     req: g_server::multipart::FormDataRequest<(), (), UploadForm>,
 ) -> Result<Response<String>, Response<String>> {
     dbg!(&req.body);
@@ -41,7 +50,7 @@ mod p {
         message: String,
     }
     pub async fn post(
-        _: (),
+        _: Context,
         req: Request<(), (), PostRequest>,
     ) -> Result<Response<PostResponse>, Response<String>> {
         dbg!(&req);
@@ -56,7 +65,7 @@ mod p {
     }
 }
 
-async fn put(_: (), _req: Request<(), (), ()>) -> Result<Response<()>, Response<String>> {
+async fn put(_: Context, _req: Request<(), (), ()>) -> Result<Response<()>, Response<String>> {
     let mut resp_headers = HeaderMap::new();
     resp_headers.insert("nganu", 123.into());
     Err(Response::new()
@@ -70,7 +79,7 @@ struct Path {
     id: u64,
 }
 
-async fn id(_: (), req: Request<Path>) -> Result<Response<String>, Response<String>> {
+async fn id(_: Context, req: Request<Path>) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text(format!("{}", req.path_params.id)))
 }
 
@@ -81,7 +90,7 @@ struct Path2 {
 }
 
 #[allow(dead_code)]
-async fn id2(_: (), req: Request<Path2>) -> Result<Response<String>, Response<String>> {
+async fn id2(_: Context, req: Request<Path2>) -> Result<Response<String>, Response<String>> {
     Ok(Response::new().with_text(format!("~ {}", req.path_params.user_id)))
 }
 
@@ -104,6 +113,7 @@ impl Display for BadReq {
 
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
+        app_context: Context,
         config: {
             normalize_endpoint: true,
             // timeout: 1000,
