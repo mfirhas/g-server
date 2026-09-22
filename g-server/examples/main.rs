@@ -591,6 +591,7 @@ pub fn __route_app_a_handler_2(router: axum::Router<Context>) -> axum::Router<Co
 use g_server::axum::extract::Multipart;
 use g_server::axum::response::IntoResponse;
 
+#[allow(dead_code)]
 async fn upload(mut multipart: Multipart) -> impl IntoResponse {
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap_or_default().to_owned();
@@ -614,8 +615,9 @@ async fn upload(mut multipart: Multipart) -> impl IntoResponse {
     "OK"
 }
 
+#[allow(dead_code)]
 async fn upload2(
-    ret: std::result::Result<
+    _ret: std::result::Result<
         g_server::axum::extract::Multipart,
         g_server::axum::extract::multipart::MultipartRejection,
     >,
