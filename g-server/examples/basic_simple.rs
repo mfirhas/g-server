@@ -111,6 +111,14 @@ gserver! {
             timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
             concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!")),
             // bad_request_error: text((StatusCode::BAD_REQUEST, BadReq("this".into()))),
+            cors: {
+                allowed_origins: ["https://example.com"],
+                allowed_methods: [get, Post, PUT],
+                allowed_headers: ["content-type", "authorization"],
+                exposed_headers: ["x-request-id"],
+                allow_credentials: true,
+                max_age: 3600,
+            },
         }
         get: {
             endpoint: "/",

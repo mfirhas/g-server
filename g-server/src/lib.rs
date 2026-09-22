@@ -14,7 +14,7 @@ pub type StatusCode = ::http::StatusCode;
 pub type HeaderMap = ::http::HeaderMap;
 pub type Bytes = ::bytes::Bytes;
 
-mod config;
+pub mod config;
 pub use config::{Compression, Config};
 
 mod request;

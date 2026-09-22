@@ -1,7 +1,7 @@
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use std::{fmt::Display, str::FromStr};
-use syn::{Expr, Result, Token, parse::ParseStream, spanned::Spanned};
+use syn::{Expr, ExprArray, Result, Token, parse::ParseStream, spanned::Spanned};
 
 pub(crate) const CONFIG_FIELD_TIMEOUT: &str = "timeout";
 pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT: &str = "concurrency_limit";
@@ -11,6 +11,7 @@ pub(crate) const CONFIG_FIELD_NORMALIZE_ENDPOINT: &str = "normalize_endpoint";
 pub(crate) const CONFIG_FIELD_TIMEOUT_ERROR: &str = "timeout_error";
 pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit_error";
 pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
+pub(crate) const CONFIG_FIELD_CORS: &str = "cors";
 
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[CONFIG_FIELD_NORMALIZE_ENDPOINT];
@@ -47,7 +48,11 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
 
         input.parse::<Token![:]>()?;
 
-        let value: Expr = input.parse()?;
+        let value: Expr = if name.to_string() == CONFIG_FIELD_CORS {
+            parse_cors(input)?
+        } else {
+            input.parse()?
+        };
 
         let config = ConfigEntry::try_new(name.clone(), value)
             .map_err(|err| syn::Error::new(name.span(), err.to_string()))?;
@@ -58,6 +63,207 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
     }
 
     Ok(entries)
+}
+
+fn parse_cors(input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut origins = None;
+    let mut methods = None;
+    let mut headers = None;
+    let mut exposed_headers = None;
+    let mut credentials = None;
+    let mut max_age = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "allowed_origins" => {
+                origins = Some(content.parse::<ExprArray>()?);
+            }
+            "allowed_methods" => {
+                methods = Some(content.parse::<ExprArray>()?);
+            }
+            "allowed_headers" => {
+                headers = Some(content.parse::<ExprArray>()?);
+            }
+            "exposed_headers" => {
+                exposed_headers = Some(content.parse::<ExprArray>()?);
+            }
+            "allow_credentials" => {
+                credentials = Some(content.parse::<Expr>()?);
+            }
+            "max_age" => {
+                max_age = Some(content.parse::<Expr>()?);
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("unknown CORS option `{field}`"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    let allowed_origins = if let Some(origins) = origins {
+        expr_array_to_header_values(&origins)?.to_token_stream()
+    } else {
+        quote! { None }
+    };
+
+    let allowed_methods = if let Some(methods_expr_arr) = methods {
+        parse_cors_methods(methods_expr_arr)?
+    } else {
+        quote! { None }
+    };
+
+    let allowed_headers = if let Some(headers) = headers {
+        expr_array_to_header_names(&headers)?.to_token_stream()
+    } else {
+        quote! { None }
+    };
+
+    let exposed_headers = if let Some(exposed_headers) = exposed_headers {
+        expr_array_to_header_names(&exposed_headers)?.to_token_stream()
+    } else {
+        quote! { None }
+    };
+
+    let allow_credentials = credentials
+        .map(|value| quote! { Some(#value) })
+        .unwrap_or_else(|| quote! { None });
+
+    let max_age = max_age
+        .map(|value| quote! { Some(#value) })
+        .unwrap_or_else(|| quote! { None });
+
+    Ok(syn::parse_quote! {
+        ::g_server::config::Cors {
+            allowed_origins: #allowed_origins,
+
+            allowed_methods: #allowed_methods,
+
+            allowed_headers: #allowed_headers,
+
+            exposed_headers: #exposed_headers,
+
+            allow_credentials: #allow_credentials,
+            max_age: #max_age,
+        }
+    })
+}
+
+fn parse_cors_methods(array: ExprArray) -> syn::Result<TokenStream2> {
+    let methods = array
+        .elems
+        .into_iter()
+        .map(|expr| {
+            let Expr::Path(path) = expr else {
+                return Err(syn::Error::new_spanned(
+                    expr,
+                    "CORS method must be an HTTP method identifier",
+                ));
+            };
+
+            let Some(segment) = path.path.segments.last() else {
+                return Err(syn::Error::new_spanned(
+                    path,
+                    "CORS method must be an HTTP method identifier",
+                ));
+            };
+
+            let method = match segment.ident.to_string().as_str() {
+                "GET" | "Get" | "get" => quote! { ::g_server::http::Method::GET },
+                "POST" | "Post" | "post" => quote! { ::g_server::http::Method::POST },
+                "PUT" | "Put" | "put" => quote! { ::g_server::http::Method::PUT },
+                "DELETE" | "Delete" | "delete" => quote! { ::g_server::http::Method::DELETE },
+                "PATCH" | "Patch" | "patch" => quote! { ::g_server::http::Method::PATCH },
+                "HEAD" | "Head" | "head" => quote! { ::g_server::http::Method::HEAD },
+                "OPTIONS" | "Options" | "options" => quote! { ::g_server::http::Method::OPTIONS },
+                "CONNECT" | "Connect" | "connect" => quote! { ::g_server::http::Method::CONNECT },
+                "TRACE" | "Trace" | "trace" => quote! { ::g_server::http::Method::TRACE },
+                "QUERY" | "Query" | "query" => quote! { ::g_server::http::Method::QUERY },
+                "ANY" | "Any" | "any" => quote! { ::g_server::http::Method::ANY },
+                _ => {
+                    return Err(syn::Error::new_spanned(segment, "invalid CORS HTTP method"));
+                }
+            };
+
+            Ok(method)
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    Ok(if methods.is_empty() {
+        quote! {None}
+    } else {
+        quote! {
+            Some(vec![
+                #(#methods),*
+            ])
+        }
+    })
+}
+
+fn expr_array_to_header_values(arr: &ExprArray) -> syn::Result<Expr> {
+    let strings: Vec<String> = arr
+        .elems
+        .iter()
+        .map(|expr| match expr {
+            Expr::Lit(expr_lit) => match &expr_lit.lit {
+                syn::Lit::Str(s) => Ok(s.value()),
+                other => Err(syn::Error::new_spanned(other, "expected a string literal")),
+            },
+            other => Err(syn::Error::new_spanned(other, "expected a string literal")),
+        })
+        .collect::<syn::Result<_>>()?;
+
+    let expr = if !strings.is_empty() {
+        syn::parse_quote! { Some(vec![#(#strings.to_string()),*].iter()
+        .map(|origin| {
+            origin
+                .parse::<g_server::http::HeaderValue>()
+                .expect("invalid CORS allowed origin")
+        })
+        .collect::<Vec<_>>()) }
+    } else {
+        syn::parse_quote! { None }
+    };
+
+    Ok(expr)
+}
+
+fn expr_array_to_header_names(arr: &ExprArray) -> syn::Result<Expr> {
+    let strings: Vec<String> = arr
+        .elems
+        .iter()
+        .map(|expr| match expr {
+            Expr::Lit(expr_lit) => match &expr_lit.lit {
+                syn::Lit::Str(s) => Ok(s.value()),
+                other => Err(syn::Error::new_spanned(other, "expected a string literal")),
+            },
+            other => Err(syn::Error::new_spanned(other, "expected a string literal")),
+        })
+        .collect::<syn::Result<_>>()?;
+
+    let expr = if !strings.is_empty() {
+        syn::parse_quote! { Some(vec![#(#strings.to_string()),*].iter()
+        .map(|origin| {
+            origin
+                .parse::<g_server::http::HeaderName>()
+                .expect("invalid CORS allowed origin")
+        })
+        .collect::<Vec<_>>()) }
+    } else {
+        syn::parse_quote! { None }
+    };
+
+    Ok(expr)
 }
 
 /// validate config entries that depend on other config entries.
@@ -319,6 +525,7 @@ impl ConfigEntry {
             CONFIG_FIELD_BODY_LIMIT => Self::validate_integer(&value),
             CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
+            CONFIG_FIELD_CORS => Ok(()),
             CONFIG_FIELD_TIMEOUT_ERROR
             | CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR
             | CONFIG_FIELD_BAD_REQUEST_ERROR => Self::validate_custom_errors(&value),

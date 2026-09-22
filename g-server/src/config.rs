@@ -18,6 +18,9 @@ pub struct Config {
     pub concurrency_limit_error: Option<fn() -> ::axum::response::Response>,
     /// Custom bad request error
     pub bad_request_error: Option<fn(&str) -> ::axum::response::Response>,
+
+    /// Cors
+    pub cors: Option<Cors>,
 }
 
 impl Config {
@@ -25,6 +28,50 @@ impl Config {
         Self {
             ..Default::default()
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Cors {
+    pub allowed_origins: Option<Vec<crate::http::HeaderValue>>,
+    pub allowed_methods: Option<Vec<crate::http::Method>>,
+    pub allowed_headers: Option<Vec<crate::http::HeaderName>>,
+    pub exposed_headers: Option<Vec<crate::http::HeaderName>>,
+    pub allow_credentials: Option<bool>,
+    pub max_age: Option<u64>, // in seconds
+}
+
+impl Cors {
+    pub fn layer(cors: Cors) -> crate::tower_http::cors::CorsLayer {
+        use tower_http::cors::CorsLayer;
+
+        let mut layer = CorsLayer::new();
+
+        if let Some(origins) = cors.allowed_origins {
+            layer = layer.allow_origin(origins);
+        }
+
+        if let Some(methods) = cors.allowed_methods {
+            layer = layer.allow_methods(methods);
+        }
+
+        if let Some(headers) = cors.allowed_headers {
+            layer = layer.allow_headers(headers);
+        }
+
+        if let Some(headers) = cors.exposed_headers {
+            layer = layer.expose_headers(headers);
+        }
+
+        if let Some(credentials) = cors.allow_credentials {
+            layer = layer.allow_credentials(credentials);
+        }
+
+        if let Some(max_age) = cors.max_age {
+            layer = layer.max_age(std::time::Duration::from_secs(max_age));
+        }
+
+        layer
     }
 }
 
