@@ -193,6 +193,8 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
 
         validate_http_routes(server)?;
 
+        validate_group_duplicate_prefixes(server)?;
+
         validate_http_group_routes(server)?;
     }
 
@@ -290,6 +292,69 @@ fn validate_http_routes(server: &crate::server::Server) -> Result<()> {
     Ok(())
 }
 
+// validate group prefixes.
+//
+// prefix is unique.
+fn validate_group_duplicate_prefixes(server: &crate::server::Server) -> syn::Result<()> {
+    let mut prefixes = std::collections::HashSet::new();
+
+    for group in &server.body.groups {
+        let prefix = match crate::expr_to_string(&group.prefix) {
+            Some(prefix) => prefix,
+            _ => {
+                return Err(syn::Error::new(
+                    group.prefix.span(),
+                    "group prefix must be literal string",
+                ));
+            }
+        };
+
+        if !prefixes.insert(prefix.clone()) {
+            return Err(syn::Error::new_spanned(
+                &group.prefix,
+                format!("duplicate group prefix `{prefix}`"),
+            ));
+        }
+
+        validate_group_duplicate_prefixes_in_members(&group.members)?;
+    }
+
+    Ok(())
+}
+
+fn validate_group_duplicate_prefixes_in_members(members: &[GroupMember]) -> syn::Result<()> {
+    let groups = members.iter().filter_map(|member| match member {
+        GroupMember::Group(group) => Some(group.as_ref()),
+        GroupMember::Route(_) => None,
+    });
+
+    let mut prefixes = std::collections::HashSet::new();
+
+    for group in groups {
+        let prefix = match crate::expr_to_string(&group.prefix) {
+            Some(prefix) => prefix,
+            _ => {
+                return Err(syn::Error::new(
+                    group.prefix.span(),
+                    "group prefix must be literal string",
+                ));
+            }
+        };
+
+        if !prefixes.insert(prefix.clone()) {
+            return Err(syn::Error::new_spanned(
+                &group.prefix,
+                format!("duplicate group prefix `{prefix}`"),
+            ));
+        }
+
+        validate_group_duplicate_prefixes_in_members(&group.members)?;
+    }
+
+    Ok(())
+}
+// -----------------------
+
 fn validate_http_group_routes(server: &crate::server::Server) -> Result<()> {
     if let ServerKind::Http = server.kind {
         let mut routes_set = HashSet::new();
@@ -339,6 +404,7 @@ fn validate_http_group_routes(server: &crate::server::Server) -> Result<()> {
     Ok(())
 }
 
+// make path params as `{...}`
 fn normalize_route_endpoint(endpoint: &str) -> String {
     endpoint
         .split('/')
