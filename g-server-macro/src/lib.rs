@@ -105,14 +105,20 @@ pub(crate) fn consume_comma(input: ParseStream<'_>) -> Result<()> {
 }
 
 pub(crate) fn expr_to_string(expr: &Expr) -> Option<String> {
-    if let Expr::Lit(expr) = &expr {
-        if let syn::Lit::Str(prefix) = &expr.lit {
-            Some(prefix.value())
-        } else {
-            None
+    match expr {
+        Expr::Lit(expr) => {
+            if let syn::Lit::Str(value) = &expr.lit {
+                Some(value.value())
+            } else {
+                None
+            }
         }
-    } else {
-        None
+        Expr::Path(expr) => expr
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string()),
+        _ => None,
     }
 }
 
