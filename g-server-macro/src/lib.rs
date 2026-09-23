@@ -113,11 +113,6 @@ pub(crate) fn expr_to_string(expr: &Expr) -> Option<String> {
                 None
             }
         }
-        Expr::Path(expr) => expr
-            .path
-            .segments
-            .last()
-            .map(|segment| segment.ident.to_string()),
         _ => None,
     }
 }
