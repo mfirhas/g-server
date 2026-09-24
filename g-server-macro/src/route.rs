@@ -137,18 +137,40 @@ pub(crate) fn parse_route(
         })
         .ok_or_else(|| syn::Error::new(endpoint.span(), "failed sanitizing route endpoint"))?;
 
-    let handler = handler.unwrap_or_else(|| {
-        let resp_type = match &response_body {
-            crate::response_body::ResponseBody::Json(ty) => quote! { #ty },
-            crate::response_body::ResponseBody::String => quote! { String },
-            crate::response_body::ResponseBody::Html => quote! { String },
-            crate::response_body::ResponseBody::Empty => quote! { () },
-        };
+    if let HttpMethod::File = method {
+        if path_params.is_some()
+            || query_params.is_some()
+            || request_body.is_some()
+            || !middlewares.is_empty()
+            || handler.is_some()
+        {
+            return Err(syn::Error::new(
+                endpoint.span(),
+                "only `endpoint` and `config` are allowed in `file` route",
+            ));
+        }
+    }
 
-        RouteHandler::Path(syn::parse_quote! {
-            g_server::route::unimplemented_handler::<_, _, _, _, #resp_type>
+    let handler = if let HttpMethod::File = method {
+        handler.unwrap_or_else(|| {
+            RouteHandler::Path(syn::parse_quote! {
+                g_server::route::file_handler
+            })
         })
-    });
+    } else {
+        handler.unwrap_or_else(|| {
+            let resp_type = match &response_body {
+                crate::response_body::ResponseBody::Json(ty) => quote! { #ty },
+                crate::response_body::ResponseBody::String => quote! { String },
+                crate::response_body::ResponseBody::Html => quote! { String },
+                crate::response_body::ResponseBody::Empty => quote! { () },
+            };
+
+            RouteHandler::Path(syn::parse_quote! {
+                g_server::route::unimplemented_handler::<_, _, _, _, #resp_type>
+            })
+        })
+    };
 
     Ok(Route {
         method,

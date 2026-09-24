@@ -21,6 +21,10 @@ pub struct Config {
 
     /// Cors
     pub cors: Option<Cors>,
+
+    /// file server configs
+    pub dir: Option<&'static str>,
+    pub fallback_file: Option<&'static str>,
 }
 
 impl Config {

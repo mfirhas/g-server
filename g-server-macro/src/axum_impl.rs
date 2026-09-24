@@ -2,7 +2,7 @@ use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{Expr, Path, Result};
 
-use crate::{request_body::RequestBody, route::RouteHandler};
+use crate::{request_body::RequestBody, route::RouteHandler, server::HttpMethod};
 
 pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
     // --------------------------------------------------------
@@ -529,6 +529,23 @@ fn generate_route_function(
 
     let context_ty = context.map(|ty| quote!(#ty)).unwrap_or_else(|| quote!(()));
 
+    // Route config starts from inherited global
+    // config and overrides only explicitly declared
+    // fields.
+    let route_config = crate::config::generate_route_config(&route.config);
+
+    let registration = generate_route_registration(route.method, &route.endpoint);
+
+    if route.method == HttpMethod::File {
+        return Ok(generate_file_handler_registration(
+            function,
+            context_ty,
+            route_config,
+            &route.endpoint,
+            registration,
+        ));
+    }
+
     let handler = &route.handler;
 
     // OPTIONAL => Path<()>
@@ -549,18 +566,11 @@ fn generate_route_function(
 
     let route_response = generate_route_response(&route.response_body);
 
-    // Route config starts from inherited global
-    // config and overrides only explicitly declared
-    // fields.
-    let route_config = crate::config::generate_route_config(&route.config);
-
     let input_extractor = generate_input_extractor(route, path_ty, query_ty, &route.request_body);
 
     let bad_request_handler = generate_bad_request_error_handler(route, &route.request_body);
 
     let form_data_parsing = generate_form_data_parsing(&route.request_body);
-
-    let registration = generate_route_registration(route.method, &route.endpoint);
 
     let handler_registration = generate_handler_registration(
         function,
@@ -618,6 +628,30 @@ fn generate_handler_registration(
                 };
 
                 #route_response
+            };
+
+            #registration
+        }
+    }
+}
+
+fn generate_file_handler_registration(
+    func: Ident,
+    context_ty: TokenStream2,
+    route_config: TokenStream2,
+    endpoint: &Expr,
+    registration: TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        pub fn #func(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
+            #route_config
+
+            use g_server::tower_http::services::{ServeDir, ServeFile};
+
+            let file_server_route = if let Some(ref not_found_file) = config.fallback_file {
+                g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()).not_found_service(ServeFile::new(not_found_file)))
+            } else {
+                g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()))
             };
 
             #registration
@@ -882,6 +916,23 @@ fn generate_group_route_function(
 
     let context_ty = context.map(|ty| quote!(#ty)).unwrap_or_else(|| quote!(()));
 
+    // Route config starts from inherited global
+    // config and overrides only explicitly declared
+    // fields.
+    let route_config = crate::config::generate_route_config(&route.config);
+
+    let registration = generate_route_registration(route.method, &route.endpoint);
+
+    if route.method == HttpMethod::File {
+        return Ok(generate_file_handler_registration(
+            function,
+            context_ty,
+            route_config,
+            &route.endpoint,
+            registration,
+        ));
+    }
+
     let handler = &route.handler;
 
     // OPTIONAL => Path<()>
@@ -902,18 +953,11 @@ fn generate_group_route_function(
 
     let route_response = generate_route_response(&route.response_body);
 
-    // Route config starts from inherited global
-    // config and overrides only explicitly declared
-    // fields.
-    let route_config = crate::config::generate_route_config(&route.config);
-
     let input_extractor = generate_input_extractor(route, path_ty, query_ty, &route.request_body);
 
     let bad_request_handler = generate_bad_request_error_handler(route, &route.request_body);
 
     let form_data_parsing = generate_form_data_parsing(&route.request_body);
-
-    let registration = generate_route_registration(route.method, &route.endpoint);
 
     let handler_registration = generate_handler_registration(
         function,
@@ -1415,6 +1459,12 @@ fn generate_route_registration(method: crate::server::HttpMethod, endpoint: &Exp
         crate::server::HttpMethod::Any => {
             quote! {
                 router.route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::any(route_handler)))
+            }
+        }
+
+        crate::server::HttpMethod::File => {
+            quote! {
+                router.merge(__register_global_middlewares(&config, file_server_route))
             }
         }
     }

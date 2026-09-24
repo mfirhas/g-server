@@ -165,6 +165,12 @@ fn parse_group_members(input: ParseStream<'_>) -> Result<Vec<GroupMember>> {
                 group_members.push(GroupMember::Route(Box::new(route)));
             }
 
+            "file" => {
+                input.parse::<Token![:]>()?;
+                let route = crate::route::parse_route(input, HttpMethod::File)?;
+                group_members.push(GroupMember::Route(Box::new(route)));
+            }
+
             _ => {
                 return Err(syn::Error::new(key.span(), "unexpected group member key"));
             }

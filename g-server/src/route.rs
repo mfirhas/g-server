@@ -81,3 +81,10 @@ pub async fn unimplemented_handler<C, P, Q, ReqB, ResB>(
         .with_status(crate::http::StatusCode::NOT_IMPLEMENTED)
         .with_text("g-server: not implemented".into()))
 }
+
+pub async fn file_handler<C, P, Q, ReqB>(
+    _: C,
+    _: Request<P, Q, ReqB>,
+) -> Result<Response<()>, Response<String>> {
+    Ok(Response::from(crate::StatusCode::OK))
+}

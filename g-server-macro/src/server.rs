@@ -97,6 +97,11 @@ pub(crate) fn parse_server_body(input: ParseStream<'_>) -> Result<ServerBody> {
                 routes.push(crate::route::parse_route(input, HttpMethod::Any)?);
             }
 
+            "file" => {
+                input.parse::<Token![:]>()?;
+                routes.push(crate::route::parse_route(input, HttpMethod::File)?);
+            }
+
             _ => {
                 return Err(syn::Error::new(key.span(), "unexpected server member"));
             }
@@ -196,6 +201,8 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
         validate_group_duplicate_prefixes(server)?;
 
         validate_http_group_routes(server)?;
+
+        validate_file_configs(&server.body)?;
     }
 
     Ok(())
@@ -656,6 +663,61 @@ fn error_handlers(config: &[ConfigEntry]) -> Vec<ConfigEntry> {
 }
 // ------------------------------------------------------------------------
 
+// validate file server configs
+/// Entry point: validate the whole tree from the root `ServerBody`.
+fn validate_file_configs(server: &ServerBody) -> syn::Result<()> {
+    // Root-level config is never attached to a single File route.
+    reject_file_configs(&server.config)?;
+
+    for route in &server.routes {
+        check_route(route)?;
+    }
+
+    for group in &server.groups {
+        check_group(group)?;
+    }
+
+    Ok(())
+}
+
+fn check_group(group: &Group) -> syn::Result<()> {
+    // Group-level config isn't scoped to one route's method either.
+    reject_file_configs(&group.config)?;
+
+    for member in &group.members {
+        match member {
+            GroupMember::Route(route) => check_route(route)?,
+            GroupMember::Group(nested) => check_group(nested)?,
+        }
+    }
+
+    Ok(())
+}
+
+fn check_route(route: &Route) -> syn::Result<()> {
+    if matches!(route.method, crate::server::HttpMethod::File) {
+        // Allowed here — no restriction to enforce.
+        Ok(())
+    } else {
+        reject_file_configs(&route.config)
+    }
+}
+
+/// Errors if any entry's ident is one of the file-only config fields.
+fn reject_file_configs(entries: &[ConfigEntry]) -> syn::Result<()> {
+    for entry in entries {
+        let name = entry.name.to_string();
+        if crate::config::FILE_CONFIGS.contains(&name.as_str()) {
+            return Err(syn::Error::new(
+                entry.name.span(),
+                format!("`{name}` is only valid on a route with method `File`",),
+            ));
+        }
+    }
+    Ok(())
+}
+// ----------------------------
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum HttpMethod {
     Get,
@@ -668,6 +730,9 @@ pub(crate) enum HttpMethod {
     Trace,
     Query,
     Any,
+
+    // non http methods
+    File,
 }
 
 impl Display for HttpMethod {
@@ -683,6 +748,8 @@ impl Display for HttpMethod {
             HttpMethod::Trace => write!(f, "TRACE"),
             HttpMethod::Query => write!(f, "QUERY"),
             HttpMethod::Any => write!(f, "ANY"),
+
+            HttpMethod::File => write!(f, "FILE"),
         }
     }
 }

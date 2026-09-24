@@ -1,5 +1,7 @@
+use axum::Router;
 use g_server::*;
 use std::result::Result;
+use tower_http::services::{ServeDir, ServeFile};
 
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -622,5 +624,10 @@ async fn upload2(
         g_server::axum::extract::multipart::MultipartRejection,
     >,
 ) -> impl IntoResponse {
+    let serve_dir =
+        ServeDir::new("assets").not_found_service(ServeFile::new("assets/404.html".to_string()));
+
+    let app: Router<()> = Router::new().nest_service("/static", serve_dir);
+
     "OK"
 }

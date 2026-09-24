@@ -142,6 +142,14 @@ gserver! {
             response_body: text,
         },
 
+        file: {
+            endpoint: "/file"
+            config: {
+                dir: "/Users/mfirhas/github.com/mfirhas/resume/out"
+                fallback_file: "READM.md"
+            }
+        }
+
         group: {
             prefix: "/v1",
             config: {
@@ -159,6 +167,9 @@ gserver! {
                     endpoint: "/test",
                     request_body: json(p::PostRequest),
                     handler: p::post,
+                }
+                file: {
+                    endpoint: "/file"
                 }
                 get: {
                     endpoint: "/wer",
