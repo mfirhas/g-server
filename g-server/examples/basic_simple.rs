@@ -111,6 +111,8 @@ impl Display for BadReq {
     }
 }
 
+const FULL: &str = "<h1>full...!!</h1>";
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         app_context: Context,
@@ -145,6 +147,8 @@ gserver! {
         file: {
             endpoint: "/file"
             config: {
+                concurrency_limit: 0
+                concurrency_limit_error: html((StatusCode::TOO_MANY_REQUESTS, FULL))
                 dir: "/Users/mfirhas/github.com/mfirhas/resume/out"
                 fallback_file: "READM.md"
             }
