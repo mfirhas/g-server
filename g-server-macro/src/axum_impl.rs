@@ -674,83 +674,91 @@ fn generate_file_handler_registration(
             use g_server::tower_http::services::{ServeDir, ServeFile};
 
             let file_server_route = if let Some(is_embed) = config.embed && is_embed {
-                #[derive(g_server::rust_embed::RustEmbed)]
-                #[folder = #embed_path]
-                struct EmbedFS;
+                #[cfg(feature = "embed")]
+                {
+                    #[derive(g_server::rust_embed::RustEmbed)]
+                    #[folder = #embed_path]
+                    struct EmbedFS;
 
-                let serve_embedded = move |uri: g_server::axum::http::Uri| async move {
-                    let path = uri.path()
-                        .strip_prefix(#orig_endpoint)
-                        .unwrap_or(uri.path())
-                        .trim_start_matches('/');
+                    let serve_embedded = move |uri: g_server::axum::http::Uri| async move {
+                        let path = uri.path()
+                            .strip_prefix(#orig_endpoint)
+                            .unwrap_or(uri.path())
+                            .trim_start_matches('/');
 
-                    match EmbedFS::get(path) {
-                        Some(file) => {
-                            let body = g_server::axum::body::Body::from(file.data.into_owned());
+                        match EmbedFS::get(path) {
+                            Some(file) => {
+                                let body = g_server::axum::body::Body::from(file.data.into_owned());
 
-                            let ret = g_server::axum::response::Response::builder()
-                                .header(
-                                    g_server::axum::http::header::CONTENT_TYPE,
-                                    g_server::mime_guess::from_path(path)
-                                        .first_or_octet_stream()
-                                        .as_ref(),
-                                )
-                                .body(body);
+                                let ret = g_server::axum::response::Response::builder()
+                                    .header(
+                                        g_server::axum::http::header::CONTENT_TYPE,
+                                        g_server::mime_guess::from_path(path)
+                                            .first_or_octet_stream()
+                                            .as_ref(),
+                                    )
+                                    .body(body);
 
-                            match ret {
-                                Ok(res) => res,
-                                Err(err) => {
-                                    if let Some(ref not_found_file) = config.fallback_file {
-                                        if let Some(not_found) = EmbedFS::get(not_found_file) {
-                                            let body = g_server::axum::body::Body::from(not_found.data.into_owned());
-                                            let ret = g_server::axum::response::Response::builder()
-                                                .header(
-                                                    g_server::axum::http::header::CONTENT_TYPE,
-                                                    g_server::mime_guess::from_path(path)
-                                                        .first_or_octet_stream()
-                                                        .as_ref(),
-                                                )
-                                                .body(body);
-                                            match ret {
-                                                Ok(res) => res,
-                                                Err(err) => g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text(format!("g-server: failed building fallback response: {}", err)).into_axum_string(),
+                                match ret {
+                                    Ok(res) => res,
+                                    Err(err) => {
+                                        if let Some(ref not_found_file) = config.fallback_file {
+                                            if let Some(not_found) = EmbedFS::get(not_found_file) {
+                                                let body = g_server::axum::body::Body::from(not_found.data.into_owned());
+                                                let ret = g_server::axum::response::Response::builder()
+                                                    .header(
+                                                        g_server::axum::http::header::CONTENT_TYPE,
+                                                        g_server::mime_guess::from_path(path)
+                                                            .first_or_octet_stream()
+                                                            .as_ref(),
+                                                    )
+                                                    .body(body);
+                                                match ret {
+                                                    Ok(res) => res,
+                                                    Err(err) => g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text(format!("g-server: failed building fallback response: {}", err)).into_axum_string(),
+                                                }
+                                            } else {
+                                                g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: fallback file not found").into_axum_string()
                                             }
                                         } else {
-                                            g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: fallback file not found").into_axum_string()
+                                            g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: failed building response").into_axum_string()
+                                        }
+                                    },
+                                }
+                            }
+                            None => {
+                                if let Some(ref not_found_file) = config.fallback_file {
+                                    if let Some(not_found) = EmbedFS::get(not_found_file) {
+                                        let body = g_server::axum::body::Body::from(not_found.data.into_owned());
+                                        let ret = g_server::axum::response::Response::builder()
+                                            .header(
+                                                g_server::axum::http::header::CONTENT_TYPE,
+                                                g_server::mime_guess::from_path(path)
+                                                    .first_or_octet_stream()
+                                                    .as_ref(),
+                                            )
+                                            .body(body);
+                                        match ret {
+                                            Ok(res) => res,
+                                            Err(err) => g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text(format!("g-server: failed building fallback's fallback response: {}", err)).into_axum_string(),
                                         }
                                     } else {
-                                        g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: failed building response").into_axum_string()
-                                    }
-                                },
-                            }
-                        }
-                        None => {
-                            if let Some(ref not_found_file) = config.fallback_file {
-                                if let Some(not_found) = EmbedFS::get(not_found_file) {
-                                    let body = g_server::axum::body::Body::from(not_found.data.into_owned());
-                                    let ret = g_server::axum::response::Response::builder()
-                                        .header(
-                                            g_server::axum::http::header::CONTENT_TYPE,
-                                            g_server::mime_guess::from_path(path)
-                                                .first_or_octet_stream()
-                                                .as_ref(),
-                                        )
-                                        .body(body);
-                                    match ret {
-                                        Ok(res) => res,
-                                        Err(err) => g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text(format!("g-server: failed building fallback's fallback response: {}", err)).into_axum_string(),
+                                        g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: fallback file's fallback file not found").into_axum_string()
                                     }
                                 } else {
-                                    g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: fallback file's fallback file not found").into_axum_string()
+                                    g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: file not found").into_axum_string()
                                 }
-                            } else {
-                                g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: file not found").into_axum_string()
-                            }
-                        },
-                    }
-                };
+                            },
+                        }
+                    };
 
-                g_server::axum::Router::new().route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::get(serve_embedded)))
+                    g_server::axum::Router::new().route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::get(serve_embedded)))
+                }
+
+                #[cfg(not(feature = "embed"))]
+                {
+                    panic!("g-server: you shall not pass...!!")
+                }
             } else {
                 if let Some(ref not_found_file) = config.fallback_file {
                     g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()).not_found_service(ServeFile::new(not_found_file)))

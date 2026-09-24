@@ -28,6 +28,9 @@ proc-macro = true
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+embed = []
+
 [dependencies]
 proc-macro2 = "1"
 quote = "1"

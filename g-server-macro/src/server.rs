@@ -706,11 +706,36 @@ fn check_group(group: &Group) -> syn::Result<()> {
 
 fn check_route(route: &Route) -> syn::Result<()> {
     if matches!(route.method, crate::server::HttpMethod::File) {
+        check_file_config_embed(&route.config)?;
         // Allowed here — no restriction to enforce.
         Ok(())
     } else {
         reject_file_configs(&route.config)
     }
+}
+
+fn check_file_config_embed(configs: &[ConfigEntry]) -> Result<()> {
+    if let Some(cfg) = configs
+        .iter()
+        .find(|cfg| cfg.name == crate::config::CONFIG_FIELD_FILE_EMBED)
+    {
+        if let Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Bool(lit),
+            ..
+        }) = &cfg.value
+            && lit.value
+        // is true
+        {
+            if !cfg!(feature = "embed") {
+                return Err(syn::Error::new(
+                    cfg.name.span(),
+                    "embed requires feature `embed`",
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Errors if any entry's ident is one of the file-only config fields.
@@ -720,7 +745,7 @@ fn reject_file_configs(entries: &[ConfigEntry]) -> syn::Result<()> {
         if crate::config::FILE_CONFIGS.contains(&name.as_str()) {
             return Err(syn::Error::new(
                 entry.name.span(),
-                format!("`{name}` is only valid on a route with method `File`",),
+                format!("`{name}` is only valid in `file` route",),
             ));
         }
     }

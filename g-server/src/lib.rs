@@ -5,12 +5,15 @@ pub use ::g_server_macro::gserver;
 // re-exports since it's in generated code.
 pub use ::axum;
 pub use ::http;
-pub use ::mime_guess;
-pub use ::rust_embed;
 pub use ::serde_urlencoded;
 pub use ::tokio;
 pub use ::tower;
 pub use ::tower_http;
+
+#[cfg(feature = "embed")]
+pub use ::mime_guess;
+#[cfg(feature = "embed")]
+pub use ::rust_embed;
 
 pub type StatusCode = ::http::StatusCode;
 pub type HeaderMap = ::http::HeaderMap;

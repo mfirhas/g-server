@@ -25,6 +25,9 @@ exclude = [
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
+
 [dependencies]
 g-server-macro = { path = "../g-server-macro" }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
@@ -35,8 +38,8 @@ bytes = "1"
 axum = { version = "0.8.9", features = ["json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_urlencoded = "0.7"
-mime_guess = "2"
-rust-embed = "8"
+rust-embed = { version = "8", optional = true}
+mime_guess = { version = "2", optional = true}
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
