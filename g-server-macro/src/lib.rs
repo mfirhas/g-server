@@ -4,9 +4,10 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use rand::{RngExt, distr::Alphanumeric};
 use syn::{
-    Expr, LitInt, LitStr, Result, Token, braced,
+    Expr, ExprLit, Lit, LitInt, LitStr, Result, Token, braced,
     parse::{Parse, ParseStream},
     parse_macro_input,
+    spanned::Spanned,
 };
 
 mod config;
@@ -115,6 +116,22 @@ pub(crate) fn expr_to_string(expr: &Expr) -> Option<String> {
         }
         _ => None,
     }
+}
+
+pub(crate) fn append_literal(expr: &Expr, suffix: &str) -> syn::Result<Expr> {
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(lit), ..
+    }) = expr
+    else {
+        return Err(syn::Error::new(expr.span(), "expected string literal"));
+    };
+
+    let value = LitStr::new(&format!("{}{}", lit.value(), suffix), lit.span());
+
+    Ok(Expr::Lit(ExprLit {
+        attrs: Vec::new(),
+        lit: Lit::Str(value),
+    }))
 }
 
 pub(crate) fn random_6_chars() -> String {

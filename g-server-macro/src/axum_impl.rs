@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{Expr, Path, Result};
+use syn::{Expr, ExprLit, Lit, Path, Result};
 
 use crate::{request_body::RequestBody, route::RouteHandler, server::HttpMethod};
 
@@ -537,12 +537,34 @@ fn generate_route_function(
     let registration = generate_route_registration(route.method, &route.endpoint);
 
     if route.method == HttpMethod::File {
+        let embed_path = route
+            .config
+            .iter()
+            .find(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_FILE_DIR)
+            .map(|cfg| cfg.value.clone())
+            .unwrap_or(syn::parse_quote!(""));
+        let endpoint = if route.config.iter().any(|cfg| {
+            cfg.name.to_string() == crate::config::CONFIG_FIELD_FILE_EMBED
+                && matches!(
+                    &cfg.value,
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Bool(lit),
+                        ..
+                    }) if lit.value
+                )
+        }) {
+            crate::append_literal(&route.endpoint, "/{*path}")?
+        } else {
+            route.endpoint.clone()
+        };
         return Ok(generate_file_handler_registration(
+            route,
             function,
             context_ty,
             route_config,
-            &route.endpoint,
+            &endpoint,
             registration,
+            &embed_path,
         ));
     }
 
@@ -636,22 +658,105 @@ fn generate_handler_registration(
 }
 
 fn generate_file_handler_registration(
+    route: &crate::route::Route,
     func: Ident,
     context_ty: TokenStream2,
     route_config: TokenStream2,
     endpoint: &Expr,
     registration: TokenStream2,
+    embed_path: &Expr,
 ) -> TokenStream2 {
+    let orig_endpoint = &route.endpoint;
     quote! {
         pub fn #func(router: g_server::axum::Router<#context_ty>) -> g_server::axum::Router<#context_ty> {
             #route_config
 
             use g_server::tower_http::services::{ServeDir, ServeFile};
 
-            let file_server_route = if let Some(ref not_found_file) = config.fallback_file {
-                g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()).not_found_service(ServeFile::new(not_found_file)))
+            let file_server_route = if let Some(is_embed) = config.embed && is_embed {
+                #[derive(g_server::rust_embed::RustEmbed)]
+                #[folder = #embed_path]
+                struct EmbedFS;
+
+                let serve_embedded = move |uri: g_server::axum::http::Uri| async move {
+                    let path = uri.path()
+                        .strip_prefix(#orig_endpoint)
+                        .unwrap_or(uri.path())
+                        .trim_start_matches('/');
+
+                    match EmbedFS::get(path) {
+                        Some(file) => {
+                            let body = g_server::axum::body::Body::from(file.data.into_owned());
+
+                            let ret = g_server::axum::response::Response::builder()
+                                .header(
+                                    g_server::axum::http::header::CONTENT_TYPE,
+                                    g_server::mime_guess::from_path(path)
+                                        .first_or_octet_stream()
+                                        .as_ref(),
+                                )
+                                .body(body);
+
+                            match ret {
+                                Ok(res) => res,
+                                Err(err) => {
+                                    if let Some(ref not_found_file) = config.fallback_file {
+                                        if let Some(not_found) = EmbedFS::get(not_found_file) {
+                                            let body = g_server::axum::body::Body::from(not_found.data.into_owned());
+                                            let ret = g_server::axum::response::Response::builder()
+                                                .header(
+                                                    g_server::axum::http::header::CONTENT_TYPE,
+                                                    g_server::mime_guess::from_path(path)
+                                                        .first_or_octet_stream()
+                                                        .as_ref(),
+                                                )
+                                                .body(body);
+                                            match ret {
+                                                Ok(res) => res,
+                                                Err(err) => g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text(format!("g-server: failed building fallback response: {}", err)).into_axum_string(),
+                                            }
+                                        } else {
+                                            g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: fallback file not found").into_axum_string()
+                                        }
+                                    } else {
+                                        g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: failed building response").into_axum_string()
+                                    }
+                                },
+                            }
+                        }
+                        None => {
+                            if let Some(ref not_found_file) = config.fallback_file {
+                                if let Some(not_found) = EmbedFS::get(not_found_file) {
+                                    let body = g_server::axum::body::Body::from(not_found.data.into_owned());
+                                    let ret = g_server::axum::response::Response::builder()
+                                        .header(
+                                            g_server::axum::http::header::CONTENT_TYPE,
+                                            g_server::mime_guess::from_path(path)
+                                                .first_or_octet_stream()
+                                                .as_ref(),
+                                        )
+                                        .body(body);
+                                    match ret {
+                                        Ok(res) => res,
+                                        Err(err) => g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text(format!("g-server: failed building fallback's fallback response: {}", err)).into_axum_string(),
+                                    }
+                                } else {
+                                    g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: fallback file's fallback file not found").into_axum_string()
+                                }
+                            } else {
+                                g_server::Response::new().with_status(g_server::StatusCode::NOT_FOUND).with_text("g-server: file not found").into_axum_string()
+                            }
+                        },
+                    }
+                };
+
+                g_server::axum::Router::new().route(#endpoint, __register_route_middlewares(&config, g_server::axum::routing::get(serve_embedded)))
             } else {
-                g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()))
+                if let Some(ref not_found_file) = config.fallback_file {
+                    g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()).not_found_service(ServeFile::new(not_found_file)))
+                } else {
+                    g_server::axum::Router::new().nest_service(#endpoint, ServeDir::new(config.dir.unwrap_or_default()))
+                }
             };
 
             #registration
@@ -924,12 +1029,34 @@ fn generate_group_route_function(
     let registration = generate_route_registration(route.method, &route.endpoint);
 
     if route.method == HttpMethod::File {
+        let embed_path = route
+            .config
+            .iter()
+            .find(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_FILE_DIR)
+            .map(|cfg| cfg.value.clone())
+            .unwrap_or(syn::parse_quote!(""));
+        let endpoint = if route.config.iter().any(|cfg| {
+            cfg.name.to_string() == crate::config::CONFIG_FIELD_FILE_EMBED
+                && matches!(
+                    &cfg.value,
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Bool(lit),
+                        ..
+                    }) if lit.value
+                )
+        }) {
+            crate::append_literal(&route.endpoint, "/{*path}")?
+        } else {
+            route.endpoint.clone()
+        };
         return Ok(generate_file_handler_registration(
+            route,
             function,
             context_ty,
             route_config,
-            &route.endpoint,
+            &endpoint,
             registration,
+            &embed_path,
         ));
     }
 
@@ -1464,7 +1591,11 @@ fn generate_route_registration(method: crate::server::HttpMethod, endpoint: &Exp
 
         crate::server::HttpMethod::File => {
             quote! {
-                router.merge(__register_global_middlewares(&config, file_server_route))
+                if let Some(is_embed) = config.embed && is_embed {
+                    router.merge(file_server_route)
+                } else {
+                    router.merge(__register_global_middlewares(&config, file_server_route))
+                }
             }
         }
     }

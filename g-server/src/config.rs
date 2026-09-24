@@ -22,9 +22,14 @@ pub struct Config {
     /// Cors
     pub cors: Option<Cors>,
 
-    /// file server configs
+    // file server configs
+    /// directory to be served
     pub dir: Option<&'static str>,
+    /// fallback file in case file not found
     pub fallback_file: Option<&'static str>,
+    /// toggle filesystem embed,
+    /// `dir` then is embedded into binary
+    pub embed: Option<bool>,
 }
 
 impl Config {

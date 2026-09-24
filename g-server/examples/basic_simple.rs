@@ -147,10 +147,11 @@ gserver! {
         file: {
             endpoint: "/file"
             config: {
-                concurrency_limit: 0
+                // embed: false
+                // concurrency_limit: 0
                 concurrency_limit_error: html((StatusCode::TOO_MANY_REQUESTS, FULL))
-                dir: "/Users/mfirhas/github.com/mfirhas/resume/out"
-                fallback_file: "READM.md"
+                dir: "/Users/mfirhas/github.com/mfirhas/resume/"
+                fallback_file: "fathir-resume-id.pdf"
             }
         }
 

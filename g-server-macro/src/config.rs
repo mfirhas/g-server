@@ -14,11 +14,16 @@ pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
 pub(crate) const CONFIG_FIELD_CORS: &str = "cors";
 pub(crate) const CONFIG_FIELD_FILE_DIR: &str = "dir";
 pub(crate) const CONFIG_FIELD_FILE_FALLBACK_FILE: &str = "fallback_file";
+pub(crate) const CONFIG_FIELD_FILE_EMBED: &str = "embed";
 
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[CONFIG_FIELD_NORMALIZE_ENDPOINT];
 
-pub(crate) static FILE_CONFIGS: &[&str] = &[CONFIG_FIELD_FILE_DIR, CONFIG_FIELD_FILE_FALLBACK_FILE];
+pub(crate) static FILE_CONFIGS: &[&str] = &[
+    CONFIG_FIELD_FILE_DIR,
+    CONFIG_FIELD_FILE_FALLBACK_FILE,
+    CONFIG_FIELD_FILE_EMBED,
+];
 
 pub(crate) static CUSTOM_ERRORS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
@@ -531,10 +536,13 @@ impl ConfigEntry {
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
             CONFIG_FIELD_CORS => Ok(()),
 
+            // file configs validations
             CONFIG_FIELD_FILE_DIR | CONFIG_FIELD_FILE_FALLBACK_FILE => {
                 Self::validate_string(&value)
             }
+            CONFIG_FIELD_FILE_EMBED => Self::validate_bool(&value),
 
+            // custom errors validations
             CONFIG_FIELD_TIMEOUT_ERROR
             | CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR
             | CONFIG_FIELD_BAD_REQUEST_ERROR => Self::validate_custom_errors(&value),

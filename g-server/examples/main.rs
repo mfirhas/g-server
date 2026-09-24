@@ -627,7 +627,7 @@ async fn upload2(
     let serve_dir =
         ServeDir::new("assets").not_found_service(ServeFile::new("assets/404.html".to_string()));
 
-    let app: Router<()> = Router::new().nest_service("/static", serve_dir);
+    let _app: Router<()> = Router::new().nest_service("/static", serve_dir);
 
     "OK"
 }
