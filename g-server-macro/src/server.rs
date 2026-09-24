@@ -264,22 +264,32 @@ fn validate_http_routes(server: &crate::server::Server) -> Result<()> {
 
                     let normalized_endpoint = normalize_route_endpoint(&endpoint_value);
 
-                    if let HttpMethod::Any = route.method {
+                    if route.method == HttpMethod::Any || route.method == HttpMethod::File {
                         if routes
                             .iter()
                             .any(|(_, endpoint)| endpoint == &normalized_endpoint)
                         {
                             return Err(syn::Error::new(
                                 endpoint.span(),
-                                format!("duplicate endpoint for `any`: {}", &endpoint_value),
+                                format!(
+                                    "duplicate endpoint for `{}`: \"{}\"",
+                                    &route.method.to_string().to_ascii_lowercase(),
+                                    &endpoint_value
+                                ),
                             ));
                         }
                     } else if routes.iter().any(|(method, endpoint)| {
-                        matches!(method, HttpMethod::Any) && endpoint == &normalized_endpoint
+                        (matches!(method, HttpMethod::Any) && endpoint == &normalized_endpoint)
+                            || (matches!(method, HttpMethod::File)
+                                && endpoint == &normalized_endpoint)
                     }) {
                         return Err(syn::Error::new(
                             endpoint.span(),
-                            format!("duplicate endpoint for existing `any`: {}", &endpoint_value),
+                            format!(
+                                "duplicate endpoint for existing `{}`: \"{}\"",
+                                &route.method.to_string().to_ascii_lowercase(),
+                                &endpoint_value
+                            ),
                         ));
                     }
 
