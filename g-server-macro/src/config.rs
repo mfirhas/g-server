@@ -11,6 +11,7 @@ pub(crate) const CONFIG_FIELD_NORMALIZE_ENDPOINT: &str = "normalize_endpoint";
 pub(crate) const CONFIG_FIELD_TIMEOUT_ERROR: &str = "timeout_error";
 pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit_error";
 pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
+pub(crate) const CONFIG_FIELD_FALLBACK_ERROR: &str = "fallback_error";
 pub(crate) const CONFIG_FIELD_CORS: &str = "cors";
 pub(crate) const CONFIG_FIELD_FILE_DIR: &str = "dir";
 pub(crate) const CONFIG_FIELD_FILE_FALLBACK_FILE: &str = "fallback_file";
@@ -19,6 +20,8 @@ pub(crate) const CONFIG_FIELD_FILE_EMBED: &str = "embed";
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[CONFIG_FIELD_NORMALIZE_ENDPOINT];
 
+pub(crate) static GLOBAL_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
+
 pub(crate) static FILE_CONFIGS: &[&str] = &[
     CONFIG_FIELD_FILE_DIR,
     CONFIG_FIELD_FILE_FALLBACK_FILE,
@@ -26,6 +29,13 @@ pub(crate) static FILE_CONFIGS: &[&str] = &[
 ];
 
 pub(crate) static CUSTOM_ERRORS: &[&str] = &[
+    CONFIG_FIELD_TIMEOUT_ERROR,
+    CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
+    CONFIG_FIELD_BAD_REQUEST_ERROR,
+    CONFIG_FIELD_FALLBACK_ERROR,
+];
+
+pub(crate) static ALL_INHERIT_CONFIGS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
     CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
     CONFIG_FIELD_BAD_REQUEST_ERROR,
@@ -545,7 +555,8 @@ impl ConfigEntry {
             // custom errors validations
             CONFIG_FIELD_TIMEOUT_ERROR
             | CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR
-            | CONFIG_FIELD_BAD_REQUEST_ERROR => Self::validate_custom_errors(&value),
+            | CONFIG_FIELD_BAD_REQUEST_ERROR
+            | CONFIG_FIELD_FALLBACK_ERROR => Self::validate_custom_errors(&value),
 
             _ => Err(syn::Error::new(
                 name.span(),

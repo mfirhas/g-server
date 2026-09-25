@@ -196,6 +196,8 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
 
         validate_http_server_configs(server)?;
 
+        validate_global_group_configs(server)?;
+
         validate_http_routes(server)?;
 
         validate_group_duplicate_prefixes(server)?;
@@ -249,6 +251,46 @@ fn validate_non_global_configs(configs: &[ConfigEntry]) -> Result<()> {
 
     Ok(())
 }
+
+// validate global and group configs only
+fn validate_global_group_configs(server: &crate::server::Server) -> Result<()> {
+    fn check_global_group_config_group(group: &Group) -> syn::Result<()> {
+        for member in &group.members {
+            match member {
+                GroupMember::Route(route) => check_global_group_config_route(route)?,
+                GroupMember::Group(nested) => check_global_group_config_group(nested)?,
+            }
+        }
+        Ok(())
+    }
+
+    fn check_global_group_config_route(route: &Route) -> syn::Result<()> {
+        for entry in &route.config {
+            if crate::config::GLOBAL_GROUP_CONFIGS.contains(&entry.name.to_string().as_str()) {
+                return Err(syn::Error::new(
+                    entry.name.span(),
+                    format!(
+                        "`{}` is only valid in root or group config, not on individual routes",
+                        entry.name
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    for group in &server.body.groups {
+        check_global_group_config_group(group)?;
+    }
+
+    for route in &server.body.routes {
+        check_global_group_config_route(route)?;
+    }
+
+    Ok(())
+}
+
+// --------------------------------------
 
 fn validate_http_routes(server: &crate::server::Server) -> Result<()> {
     if let ServerKind::Http = server.kind {
@@ -667,7 +709,9 @@ fn inherit_error_handlers(inherited: &[ConfigEntry], config: &mut Vec<ConfigEntr
 fn error_handlers(config: &[ConfigEntry]) -> Vec<ConfigEntry> {
     config
         .iter()
-        .filter(|entry| crate::config::CUSTOM_ERRORS.contains(&entry.name.to_string().as_str()))
+        .filter(|entry| {
+            crate::config::ALL_INHERIT_CONFIGS.contains(&entry.name.to_string().as_str())
+        })
         .cloned()
         .collect()
 }

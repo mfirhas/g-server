@@ -111,12 +111,18 @@ impl Display for BadReq {
     }
 }
 
+#[derive(Deserialize)]
+struct NumPathParam {
+    num: u64,
+}
+
 const FULL: &str = "<h1>full...!!</h1>";
 
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         app_context: Context,
         config: {
+            fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
             normalize_endpoint: true,
             // timeout: 1000,
             body_limit: 1,
@@ -133,6 +139,9 @@ gserver! {
             },
         }
         get: {
+            config: {
+                // fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
+            }
             endpoint: "/",
             response_body: text,
             handler: |_, _| g_server::Result::<_,String>::Ok((StatusCode::OK, "OK").into()),
@@ -151,13 +160,14 @@ gserver! {
                 // concurrency_limit: 0
                 concurrency_limit_error: html((StatusCode::TOO_MANY_REQUESTS, FULL))
                 dir: "/Users/mfirhas/github.com/mfirhas/resume/"
-                fallback_file: "fathir-resume-id.pdf"
+                fallback_file: "out/fathir-resume-id.pdf"
             }
         }
 
         group: {
             prefix: "/v1",
             config: {
+                fallback_error: html((StatusCode::NOT_FOUND, "<h2>****NOT FOUND!!!!</h2>"))
                 concurrency_limit: 1,
                 concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("penuh!!")),
                 timeout: 10,
@@ -165,7 +175,14 @@ gserver! {
             },
             members: [
                 get: {
+                    endpoint: "/{num}"
+                    path_params: NumPathParam,
+                    response_body: text,
+                    handler: |_, req: Request<NumPathParam>| g_server::Result::<u64, String>::Ok((StatusCode::OK, req.path_params.num).into())
+                }
+                get: {
                     config: {
+                        // fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
                         concurrency_limit: 0,
                         // concurrency_limit_error: html((StatusCode::TOO_MANY_REQUESTS, "<h1>OVERLOAD.........!!!!</h1>")),
                     }

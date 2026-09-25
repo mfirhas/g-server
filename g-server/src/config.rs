@@ -18,6 +18,8 @@ pub struct Config {
     pub concurrency_limit_error: Option<fn() -> ::axum::response::Response>,
     /// Custom bad request error
     pub bad_request_error: Option<fn(&str) -> ::axum::response::Response>,
+    /// Fallback error
+    pub fallback_error: Option<fn() -> ::axum::response::Response>,
 
     /// Cors
     pub cors: Option<Cors>,

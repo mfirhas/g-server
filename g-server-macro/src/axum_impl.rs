@@ -267,6 +267,14 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 router = router.layer(g_server::config::Cors::layer(cors.clone()))
             }
 
+            if let Some(fallback_err) = global_config.fallback_error {
+                router = router.fallback(
+                    move || async move {
+                        fallback_err()
+                    }
+                );
+            }
+
             if let Some(normalize_endpoint) = global_config.normalize_endpoint && normalize_endpoint {
                 router = router.layer(
                     g_server::axum::middleware::from_fn(normalize_endpoint_middleware)
@@ -366,6 +374,14 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
 
             if let Some(ref cors) = config.cors {
                 router = router.route_layer(g_server::config::Cors::layer(cors.clone()))
+            }
+
+            if let Some(fallback_err) = config.fallback_error {
+                router = router.fallback(
+                    move || async move {
+                        fallback_err()
+                    }
+                );
             }
 
             if let Some(normalize_endpoint) = config.normalize_endpoint && normalize_endpoint {
