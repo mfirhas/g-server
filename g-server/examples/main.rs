@@ -172,7 +172,12 @@ async fn main() {
 
     // We join all servers inside this
     ::tokio::try_join!(
-        ::axum::serve(app_a_listener, app_a.1),
+        ::axum::serve(
+            app_a_listener,
+            app_a
+                .1
+                .into_make_service_with_connect_info::<std::net::SocketAddr>()
+        ),
         // ::axum::serve(another_app_listener, another_app.1),
     )
     .expect("failed running the all servers...");

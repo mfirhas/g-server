@@ -29,6 +29,7 @@ proc-macro = true
 all-features = true
 
 [features]
+ratelimit = []
 embed = []
 
 [dependencies]

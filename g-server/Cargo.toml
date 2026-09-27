@@ -26,6 +26,7 @@ exclude = [
 all-features = true
 
 [features]
+ratelimit = ["dep:tower_governor", "g-server-macro/ratelimit"]
 embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
 
 [dependencies]
@@ -35,11 +36,13 @@ tower = { version = "0.5", features = ["limit", "timeout", "load-shed"] }
 tower-http = { version = "0.7", features = ["compression-full", "cors", "fs"] }
 http = "1"
 bytes = "1"
-axum = { version = "0.8.9", features = ["json", "multipart"] }
+axum = { version = "0.8.9", features = ["tokio", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
 serde_urlencoded = "0.7"
-rust-embed = { version = "8", optional = true}
-mime_guess = { version = "2", optional = true}
+
+tower_governor = { version = "0.8", optional = true }
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }

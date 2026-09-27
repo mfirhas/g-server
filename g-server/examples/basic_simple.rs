@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
 use g_server::{
-    Request, Response, gserver,
+    Request, Response,
+    config::CustomKey,
+    gserver,
     http::{HeaderMap, StatusCode},
 };
 use serde::{Deserialize, Serialize};
@@ -116,6 +118,20 @@ struct NumPathParam {
     num: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct MyKey;
+
+impl CustomKey for MyKey {
+    type Key = Self;
+
+    fn key<B>(
+        &self,
+        _req: &g_server::http::Request<B>,
+    ) -> Result<Self::Key, g_server::config::CustomKeyError> {
+        Ok(MyKey)
+    }
+}
+
 const FULL: &str = "<h1>full...!!</h1>";
 
 gserver! {
@@ -137,10 +153,22 @@ gserver! {
                 allow_credentials: true,
                 max_age: 3600,
             },
+            rate_limit: {
+                burst_size: 100
+                interval: 1000
+                with_headers: true
+                key: custom(MyKey)
+            }
         }
         get: {
             config: {
                 // fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
+                rate_limit: {
+                    burst_size: 1
+                    interval: 1000
+                    with_headers: true
+                    key: custom(MyKey)
+                }
             }
             endpoint: "/",
             response_body: text,
@@ -185,6 +213,12 @@ gserver! {
                         // fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
                         concurrency_limit: 0,
                         // concurrency_limit_error: html((StatusCode::TOO_MANY_REQUESTS, "<h1>OVERLOAD.........!!!!</h1>")),
+                        rate_limit: {
+                            burst_size: 1
+                            interval: 1000
+                            with_headers: true
+                            key: custom(MyKey)
+                        }
                     }
                     endpoint: "/test",
                     request_body: json(p::PostRequest),

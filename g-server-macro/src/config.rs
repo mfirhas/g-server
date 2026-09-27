@@ -13,6 +13,7 @@ pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit
 pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
 pub(crate) const CONFIG_FIELD_FALLBACK_ERROR: &str = "fallback_error";
 pub(crate) const CONFIG_FIELD_CORS: &str = "cors";
+pub(crate) const CONFIG_FIELD_RATE_LIMIT: &str = "rate_limit";
 pub(crate) const CONFIG_FIELD_FILE_DIR: &str = "dir";
 pub(crate) const CONFIG_FIELD_FILE_FALLBACK_FILE: &str = "fallback_file";
 pub(crate) const CONFIG_FIELD_FILE_EMBED: &str = "embed";
@@ -69,6 +70,14 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
 
         let value: Expr = if name.to_string() == CONFIG_FIELD_CORS {
             parse_cors(input)?
+        } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
+            if !cfg!(feature = "ratelimit") {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "`ratelimit` requires feature `ratelimit`",
+                ));
+            }
+            parse_rate_limit(&name, input)?
         } else {
             input.parse()?
         };
@@ -285,6 +294,130 @@ fn expr_array_to_header_names(arr: &ExprArray) -> syn::Result<Expr> {
     Ok(expr)
 }
 
+const RATE_LIMIT_KEY_GLOBAL: &str = "global";
+const RATE_LIMIT_KEY_IP: &str = "ip";
+const RATE_LIMIT_KEY_CUSTOM: &str = "custom";
+
+fn parse_rate_limit(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut burst_size = None;
+    let mut interval = None;
+    let mut with_headers = None;
+    let mut key: Option<(Ident, Expr)> = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "burst_size" => burst_size = Some(content.parse::<Expr>()?),
+            "interval" => interval = Some(content.parse::<Expr>()?),
+            "with_headers" => with_headers = Some(content.parse::<Expr>()?),
+            "key" => {
+                let key_ident: Ident = content.parse()?;
+                if key_ident.to_string() == RATE_LIMIT_KEY_GLOBAL
+                    || key_ident.to_string() == RATE_LIMIT_KEY_IP
+                {
+                    key = Some((key_ident, syn::parse_quote!(())));
+                } else if key_ident.to_string() == RATE_LIMIT_KEY_CUSTOM {
+                    let key_content;
+                    syn::parenthesized!(key_content in content);
+                    let val: Expr = key_content.parse()?;
+                    key = Some((key_ident, val));
+                } else {
+                    return Err(syn::Error::new(
+                        key_ident.span(),
+                        "invalid `key` type: supported `global`, `ip`, `custom(Type: CustomKey)`",
+                    ));
+                }
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("unknown rate limit option `{field}`"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    let burst_size = if let Some(burst) = burst_size {
+        match &burst {
+            Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Int(lit_int),
+                ..
+            }) => {
+                let b: u32 = lit_int.base10_parse()?;
+                if b == 0 {
+                    return Err(syn::Error::new(
+                        burst.span(),
+                        "`burst_size` must not be zero",
+                    ));
+                }
+            }
+            _ => return Err(syn::Error::new(burst.span(), "expects an integer")),
+        };
+        burst
+    } else {
+        return Err(syn::Error::new(
+            ident.span(),
+            "rate limit burst_size must not be empty",
+        ));
+    };
+
+    let interval = if let Some(interval) = interval {
+        match &interval {
+            Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Int(lit_int),
+                ..
+            }) => {
+                let p: u64 = lit_int.base10_parse()?;
+                if p == 0 {
+                    return Err(syn::Error::new(
+                        interval.span(),
+                        "`interval` must not be zero",
+                    ));
+                }
+            }
+            _ => return Err(syn::Error::new(interval.span(), "expects an integer")),
+        };
+        interval
+    } else {
+        // default to refilling token at every 100 milliseconds.
+        syn::parse_quote!(100)
+    };
+
+    let with_headers = if let Some(use_headers) = with_headers {
+        ConfigEntry::validate_bool(&use_headers)?;
+        use_headers
+    } else {
+        syn::parse_quote!(false)
+    };
+
+    let mut rate_limit_key: Expr = syn::parse_quote! { g_server::config::RateLimitKey::default() };
+    if let Some((ident, custom_key)) = key {
+        if ident.to_string() == RATE_LIMIT_KEY_GLOBAL {
+            rate_limit_key = syn::parse_quote! { g_server::config::RateLimitKey::Global };
+        } else if ident.to_string() == RATE_LIMIT_KEY_CUSTOM {
+            rate_limit_key =
+                syn::parse_quote! { g_server::config::RateLimitKey::Custom(#custom_key) }
+        }
+    }
+
+    Ok(syn::parse_quote! {
+        g_server::config::RateLimit {
+            burst_size: #burst_size,
+            interval: #interval,
+            with_headers: #with_headers,
+            key: #rate_limit_key,
+        }
+    })
+}
+
 /// validate config entries that depend on other config entries.
 // fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
 //     let pairs = [
@@ -394,6 +527,12 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
             }
         }
 
+        if field.to_string() == CONFIG_FIELD_RATE_LIMIT {
+            return quote! {
+                let mut global_config = global_config.with_rate_limit(#value);
+            }
+        }
+
         quote! {
             global_config.#field = (#value).into();
         }
@@ -493,6 +632,12 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
             }
         }
 
+        if field.to_string() == CONFIG_FIELD_RATE_LIMIT {
+            return quote! {
+                let mut config = config.with_rate_limit(#value);
+            }
+        }
+
         quote! {
             config.#field = (#value).into();
         }
@@ -545,6 +690,7 @@ impl ConfigEntry {
             CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
             CONFIG_FIELD_CORS => Ok(()),
+            CONFIG_FIELD_RATE_LIMIT => Ok(()),
 
             // file configs validations
             CONFIG_FIELD_FILE_DIR | CONFIG_FIELD_FILE_FALLBACK_FILE => {

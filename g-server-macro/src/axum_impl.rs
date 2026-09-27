@@ -155,7 +155,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         quote! {
             g_server::axum::serve(
                 #listener,
-                #name.1,
+                #name.1.into_make_service_with_connect_info::<std::net::SocketAddr>(),
             )
         }
     });
@@ -179,12 +179,13 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
 fn generate_global_infra_middlewares() -> TokenStream2 {
     quote! {
-        fn __register_global_middlewares<C>(
-            global_config: &::g_server::Config,
+        fn __register_global_middlewares<C, RLKey>(
+            global_config: &::g_server::Config<RLKey>,
             mut router: g_server::axum::Router<C>,
         ) -> g_server::axum::Router<C>
         where
             C: Clone + Send + Sync + 'static,
+            RLKey: std::fmt::Debug + Eq + PartialEq + Clone + std::hash::Hash + g_server::config::CustomKey + Send + Sync + 'static,
         {
             if let Some(c) = global_config.compression {
                 router = router.layer(match c {
@@ -232,6 +233,10 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 _ => {}
             }
 
+            if let Some(ref rate_limit) = global_config.rate_limit {
+                router = rate_limit.layer(router);
+            }
+
             match (global_config.timeout, global_config.timeout_error) {
                 (Some(ms), Some(err_handler)) => {
                     router = router.layer(
@@ -264,7 +269,7 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
             }
 
             if let Some(ref cors) = global_config.cors {
-                router = router.layer(g_server::config::Cors::layer(cors.clone()))
+                router = router.layer(cors.clone().layer())
             }
 
             if let Some(fallback_err) = global_config.fallback_error {
@@ -288,12 +293,13 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
 
 fn generate_route_infra_middlewares() -> TokenStream2 {
     quote! {
-        fn __register_route_middlewares<C>(
-            config: &::g_server::Config,
+        fn __register_route_middlewares<C, RLKey>(
+            config: &::g_server::Config<RLKey>,
             mut router: g_server::axum::routing::MethodRouter<C>,
         ) -> g_server::axum::routing::MethodRouter<C>
         where
             C: Clone + Send + Sync + 'static,
+            RLKey: std::fmt::Debug + Eq + PartialEq + Clone + std::hash::Hash + g_server::config::CustomKey + Send + Sync + 'static,
         {
             if let Some(c) = config.compression {
                 router = router.route_layer(match c {
@@ -341,6 +347,10 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 _ => {}
             }
 
+            if let Some(ref rate_limit) = config.rate_limit {
+                router = rate_limit.route_layer(router);
+            }
+
             match (config.timeout, config.timeout_error) {
                 (Some(ms), Some(err_handler)) => {
                     router = router.route_layer(
@@ -373,7 +383,7 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
             }
 
             if let Some(ref cors) = config.cors {
-                router = router.route_layer(g_server::config::Cors::layer(cors.clone()))
+                router = router.route_layer(cors.clone().layer())
             }
 
             if let Some(fallback_err) = config.fallback_error {
