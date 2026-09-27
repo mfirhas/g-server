@@ -7,6 +7,7 @@ pub use ::axum;
 pub use ::http;
 pub use ::serde_urlencoded;
 pub use ::tokio;
+pub use ::tokio_util;
 pub use ::tower;
 pub use ::tower_http;
 

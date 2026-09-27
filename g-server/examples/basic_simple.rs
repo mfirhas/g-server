@@ -142,6 +142,7 @@ gserver! {
             normalize_endpoint: true,
             // timeout: 1000,
             body_limit: 1,
+            graceful_shutdown: false,
             timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
             concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!")),
             // bad_request_error: text((StatusCode::BAD_REQUEST, BadReq("this".into()))),

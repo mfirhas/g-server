@@ -14,6 +14,8 @@ pub struct Config<RLKey = ()> {
     pub compression: Option<Compression>,
     /// Remove repeated slash(es)
     pub normalize_endpoint: Option<bool>,
+    /// toggle graceful shutdown
+    pub graceful_shutdown: Option<bool>,
 
     /// Custom timeout error
     pub timeout_error: Option<fn() -> ::axum::response::Response>,
@@ -64,6 +66,7 @@ impl Config {
             dir: self.dir,
             fallback_file: self.fallback_file,
             embed: self.embed,
+            graceful_shutdown: self.graceful_shutdown,
         }
     }
 }

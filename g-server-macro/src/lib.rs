@@ -134,6 +134,16 @@ pub(crate) fn append_literal(expr: &Expr, suffix: &str) -> syn::Result<Expr> {
     }))
 }
 
+pub(crate) fn extract_bool(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lit(ExprLit {
+            lit: Lit::Bool(value),
+            ..
+        }) if value.value
+    )
+}
+
 pub(crate) fn random_6_chars() -> String {
     rand::rng()
         .sample_iter(&Alphanumeric)

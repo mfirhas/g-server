@@ -147,10 +147,70 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         }
     });
 
+    let mut is_graceful = false;
+    // graceful shutdown cancellation token
+    let grace_shutdown_canc_token: TokenStream2 = if servers.iter().any(|s| {
+        s.body.config.iter().any(|cfg| {
+            cfg.name.to_string() == crate::config::CONFIG_FIELD_GRACEFUL_SHUTDOWN
+                && crate::extract_bool(&cfg.value)
+        })
+    }) {
+        is_graceful = true;
+        quote! {
+            let shutdown_signal = async || {
+                let ctrl_c = async {
+                    tokio::signal::ctrl_c()
+                        .await
+                        .expect("failed to install Ctrl+C handler");
+                };
+
+                #[cfg(unix)]
+                let terminate = async {
+                    tokio::signal::unix::signal(
+                        tokio::signal::unix::SignalKind::terminate(),
+                    )
+                    .expect("failed to install SIGTERM handler")
+                    .recv()
+                    .await;
+                };
+
+                #[cfg(not(unix))]
+                let terminate = std::future::pending::<()>();
+
+                tokio::select! {
+                    _ = ctrl_c => {},
+                    _ = terminate => {},
+                }
+            };
+
+            let shutdown = g_server::tokio_util::sync::CancellationToken::new();
+
+            let signal_shutdown = shutdown.clone();
+
+            g_server::tokio::spawn(async move {
+                shutdown_signal().await;
+                println!("shutdown signal received...");
+                signal_shutdown.cancel();
+                println!("shutting down...");
+            });
+        }
+    } else {
+        quote! {}
+    };
+
     let serves = servers.iter().map(|server| {
         let name = server_ident(server);
 
         let listener = format_ident!("{}_listener", name);
+
+        if is_graceful {
+            return quote! {
+                g_server::axum::serve(
+                    #listener,
+                    #name.1.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                ).with_graceful_shutdown(shutdown.clone().cancelled_owned())
+            };
+        }
 
         quote! {
             g_server::axum::serve(
@@ -166,6 +226,8 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             #(#initializers)*
 
             #(#listeners)*
+
+            #grace_shutdown_canc_token
 
             g_server::tokio::try_join!(
                 #(#serves),*

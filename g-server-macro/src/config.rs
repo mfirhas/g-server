@@ -14,12 +14,16 @@ pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
 pub(crate) const CONFIG_FIELD_FALLBACK_ERROR: &str = "fallback_error";
 pub(crate) const CONFIG_FIELD_CORS: &str = "cors";
 pub(crate) const CONFIG_FIELD_RATE_LIMIT: &str = "rate_limit";
+pub(crate) const CONFIG_FIELD_GRACEFUL_SHUTDOWN: &str = "graceful_shutdown";
 pub(crate) const CONFIG_FIELD_FILE_DIR: &str = "dir";
 pub(crate) const CONFIG_FIELD_FILE_FALLBACK_FILE: &str = "fallback_file";
 pub(crate) const CONFIG_FIELD_FILE_EMBED: &str = "embed";
 
 /// Configs that only allowed in server's root.
-pub(crate) static GLOBAL_CONFIGS: &[&str] = &[CONFIG_FIELD_NORMALIZE_ENDPOINT];
+pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
+    CONFIG_FIELD_NORMALIZE_ENDPOINT,
+    CONFIG_FIELD_GRACEFUL_SHUTDOWN,
+];
 
 pub(crate) static GLOBAL_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
 
@@ -689,6 +693,7 @@ impl ConfigEntry {
             CONFIG_FIELD_BODY_LIMIT => Self::validate_integer(&value),
             CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
+            CONFIG_FIELD_GRACEFUL_SHUTDOWN => Self::validate_bool(&value),
             CONFIG_FIELD_CORS => Ok(()),
             CONFIG_FIELD_RATE_LIMIT => Ok(()),
 
