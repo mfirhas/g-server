@@ -109,7 +109,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             let #name = match #init().await {
                 Ok(ctx) => ctx,
                 Err(err) => {
-                    eprintln!("g-server: failed initializing context of `{}`: {}", #server_name, err);
+                    eprintln!("g-server: failed initializing server `{}`: {}", #server_name, err);
                     return;
                 },
             };
