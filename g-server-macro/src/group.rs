@@ -68,12 +68,24 @@ pub(crate) fn parse_group(input: ParseStream<'_>) -> Result<Group> {
         syn::Error::new(Span::call_site(), "group requires mandatory field `prefix`")
     })?;
 
-    // sanitize prefix
-    let prefix = crate::expr_to_string(&prefix)
-        .and_then(|ref expr_str| {
-            syn::parse_str::<Expr>(&format!("\"{}\"", crate::sanitize_endpoint(expr_str))).ok()
-        })
-        .ok_or_else(|| syn::Error::new(prefix.span(), "failed sanitizing group prefix"))?;
+    let prefix = if let Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(literal_prefix),
+        ..
+    }) = &prefix
+    {
+        // sanitize prefix
+        syn::parse_str::<Expr>(&format!(
+            "\"{}\"",
+            crate::sanitize_endpoint(&literal_prefix.value())
+        ))?
+    } else if let Expr::Path(syn::ExprPath { .. }) = &prefix {
+        prefix
+    } else {
+        return Err(syn::Error::new(
+            prefix.span(),
+            "`prefix` accepts literal string, static or const",
+        ));
+    };
 
     if members.is_empty() {
         return Err(syn::Error::new(

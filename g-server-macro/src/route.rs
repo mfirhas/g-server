@@ -130,12 +130,24 @@ pub(crate) fn parse_route(
         )
     })?;
 
-    // sanitize endpoint
-    let endpoint = crate::expr_to_string(&endpoint)
-        .and_then(|ref expr_str| {
-            syn::parse_str::<Expr>(&format!("\"{}\"", crate::sanitize_endpoint(expr_str))).ok()
-        })
-        .ok_or_else(|| syn::Error::new(endpoint.span(), "failed sanitizing route endpoint"))?;
+    let endpoint = if let Expr::Lit(syn::ExprLit {
+        lit: syn::Lit::Str(literal_endpoint),
+        ..
+    }) = &endpoint
+    {
+        // sanitize endpoint
+        syn::parse_str::<Expr>(&format!(
+            "\"{}\"",
+            crate::sanitize_endpoint(&literal_endpoint.value())
+        ))?
+    } else if let Expr::Path(syn::ExprPath { .. }) = &endpoint {
+        endpoint
+    } else {
+        return Err(syn::Error::new(
+            endpoint.span(),
+            "`endpoint` accepts literal string, static or const",
+        ));
+    };
 
     if let HttpMethod::File = method {
         if path_params.is_some()
@@ -235,12 +247,12 @@ pub(crate) struct Route {
 
     // MANDATORY.
     //
-    // Kept as an expression so this can eventually support:
+    // Supported values:
+    // - Literal string: e.g "/v1/user"
+    // - Const and Static
     //
-    // endpoint: "/foo",
-    // endpoint: SOME_STATIC,
-    //
-    // instead of only a string literal.
+    // Literal string is sanitized,
+    // while const and static aren't.
     pub(crate) endpoint: Expr,
 
     // OPTIONAL.
