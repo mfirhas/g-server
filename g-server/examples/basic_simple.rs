@@ -134,6 +134,8 @@ impl CustomKey for MyKey {
 
 const FULL: &str = "<h1>full...!!</h1>";
 
+const PATH: &str = "//this";
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         app_context: Context,
@@ -161,6 +163,11 @@ gserver! {
                 key: custom(MyKey)
             }
         }
+
+        get: {
+            endpoint: PATH,
+        }
+
         get: {
             config: {
                 // fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
