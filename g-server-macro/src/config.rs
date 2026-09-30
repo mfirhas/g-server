@@ -436,6 +436,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
 
     let mut cert = None;
     let mut key = None;
+    let mut redirect_from_port = None;
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -452,7 +453,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     }) => {
                         let path_str = lit_str.value();
                         let path = std::path::Path::new(&path_str);
-                        if !path.exists() {
+                        if !path.is_file() || !path.exists() {
                             return Err(syn::Error::new(
                                 cert_expr.span(),
                                 "`cert` file doesn't exist",
@@ -478,7 +479,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     }) => {
                         let path_str = lit_str.value();
                         let path = std::path::Path::new(&path_str);
-                        if !path.exists() {
+                        if !path.is_file() || !path.exists() {
                             return Err(syn::Error::new(
                                 key_expr.span(),
                                 "`key` file doesn't exist",
@@ -494,6 +495,9 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     }
                 }
                 key = Some(key_expr)
+            }
+            "redirect_from" => {
+                redirect_from_port = Some(content.parse::<Expr>()?);
             }
             _ => {
                 return Err(syn::Error::new(
@@ -515,11 +519,17 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             ));
         }
     };
+    let redirect_port = if let Some(port) = redirect_from_port {
+        quote! { redirect_from_port: Some(#port), }
+    } else {
+        quote! { redirect_from_port: None, }
+    };
 
     Ok(syn::parse_quote! {
         g_server::config::Tls {
             cert: #cert.to_string(),
             key: #key.to_string(),
+            #redirect_port
         }
     })
 }

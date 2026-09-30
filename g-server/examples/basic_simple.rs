@@ -167,6 +167,7 @@ gserver! {
             tls: {
                 cert: "g-server/examples/tls/cert.pem",
                 key: "g-server/examples/tls/key.pem",
+                redirect_from: 42269,
             }
         }
 

@@ -187,15 +187,15 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         quote! {
             let shutdown_signal = async || {
                 let ctrl_c = async {
-                    tokio::signal::ctrl_c()
+                    g_server::tokio::signal::ctrl_c()
                         .await
                         .expect("failed to install Ctrl+C handler");
                 };
 
                 #[cfg(unix)]
                 let terminate = async {
-                    tokio::signal::unix::signal(
-                        tokio::signal::unix::SignalKind::terminate(),
+                    g_server::tokio::signal::unix::signal(
+                        g_server::tokio::signal::unix::SignalKind::terminate(),
                     )
                     .expect("failed to install SIGTERM handler")
                     .recv()
@@ -205,7 +205,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                 #[cfg(not(unix))]
                 let terminate = std::future::pending::<()>();
 
-                tokio::select! {
+                g_server::tokio::select! {
                     _ = ctrl_c => {},
                     _ = terminate => {},
                 }
@@ -246,7 +246,15 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     let #tls_config_name = (#tls_config_value).rustls_config().await
                             .expect(format!("g-server: failed reading and creating rustls config for {}", #name.0.name).as_str());
                 };
+                let host = server.ip.value();
+                let https_port: u16 = server.port.base10_parse().expect("invalid port, expect u16");
+                let redirect_http_to_https = quote! {
+                    if let Some(http_port) = (#tls_config_value).redirect_from_port {
+                        g_server::tokio::spawn(g_server::config::Tls::redirect_http_to_https(#host, http_port, #https_port));
+                    }
+                };
                 tls_config.push(config_factory);
+                tls_config.push(redirect_http_to_https);
                 tls_config.push(quote! {
                     println!(
                         "g-server(TLS): running {} on {}:{}...",

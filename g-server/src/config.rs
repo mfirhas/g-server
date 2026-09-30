@@ -385,6 +385,8 @@ pub struct Tls {
     pub cert: String,
     /// file path to private key
     pub key: String,
+    /// http port as source of redirection to https
+    pub redirect_from_port: Option<u16>,
 }
 
 impl Tls {
@@ -395,5 +397,46 @@ impl Tls {
         crate::axum_server::tls_rustls::RustlsConfig::from_pem_file(&self.cert, &self.key)
             .await
             .map_err(|err| err.to_string())
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn redirect_http_to_https(
+        host: &'static str,
+        http_port: u16,
+        https_port: u16,
+    ) -> impl Future<Output = std::io::Result<()>> {
+        fn make_https(
+            uri: crate::axum::http::Uri,
+            host: &'static str,
+            https_port: u16,
+        ) -> Result<crate::axum::http::Uri, crate::axum::BoxError> {
+            let mut parts = uri.into_parts();
+
+            parts.scheme = Some(crate::axum::http::uri::Scheme::HTTPS);
+            parts.authority = Some(format!("{host}:{https_port}").parse()?);
+
+            if parts.path_and_query.is_none() {
+                parts.path_and_query = Some("/".parse().unwrap());
+            }
+
+            Ok(crate::axum::http::Uri::from_parts(parts)?)
+        }
+
+        async move {
+            let redirect = move |uri: crate::axum::http::Uri| async move {
+                match make_https(uri, host, https_port) {
+                    Ok(uri) => Ok(crate::axum::response::Redirect::permanent(&uri.to_string())),
+                    Err(err) => Err((crate::axum::http::StatusCode::BAD_REQUEST, err.to_string())),
+                }
+            };
+
+            let listener = crate::tokio::net::TcpListener::bind((host, http_port)).await?;
+
+            crate::axum::serve(
+                listener,
+                crate::axum::routing::any(redirect).into_make_service(),
+            )
+            .await
+        }
     }
 }
