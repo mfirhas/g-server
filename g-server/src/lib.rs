@@ -19,6 +19,9 @@ pub use ::rust_embed;
 #[cfg(feature = "ratelimit")]
 pub use ::tower_governor;
 
+#[cfg(feature = "tls")]
+pub use ::axum_server;
+
 pub type StatusCode = ::http::StatusCode;
 pub type HeaderMap = ::http::HeaderMap;
 pub type Bytes = ::bytes::Bytes;

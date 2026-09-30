@@ -28,6 +28,7 @@ all-features = true
 [features]
 ratelimit = ["dep:tower_governor", "g-server-macro/ratelimit"]
 embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
+tls = ["dep:axum-server", "g-server-macro/tls"]
 
 [dependencies]
 g-server-macro = { path = "../g-server-macro" }
@@ -44,6 +45,7 @@ serde_urlencoded = "0.7"
 tower_governor = { version = "0.8", optional = true }
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
+axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }

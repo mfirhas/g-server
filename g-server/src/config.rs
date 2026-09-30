@@ -17,6 +17,9 @@ pub struct Config<RLKey = ()> {
     /// toggle graceful shutdown
     pub graceful_shutdown: Option<bool>,
 
+    /// TLS config
+    pub tls: Option<Tls>,
+
     /// Custom timeout error
     pub timeout_error: Option<fn() -> ::axum::response::Response>,
     /// Custom concurrency limit error
@@ -52,6 +55,8 @@ impl Config {
     pub fn with_rate_limit<RLKey>(self, rate_limit_key: RateLimit<RLKey>) -> Config<RLKey> {
         Config::<RLKey> {
             rate_limit: Some(rate_limit_key),
+
+            tls: self.tls,
 
             timeout: self.timeout,
             concurrency_limit: self.concurrency_limit,
@@ -370,5 +375,25 @@ where
                 msg: Some(err.message),
                 headers: None,
             })
+    }
+}
+
+// TLS configs
+#[derive(Debug, Clone)]
+pub struct Tls {
+    /// file path to certificate
+    pub cert: String,
+    /// file path to private key
+    pub key: String,
+}
+
+impl Tls {
+    #[cfg(feature = "tls")]
+    pub async fn rustls_config(
+        &self,
+    ) -> Result<crate::axum_server::tls_rustls::RustlsConfig, String> {
+        crate::axum_server::tls_rustls::RustlsConfig::from_pem_file(&self.cert, &self.key)
+            .await
+            .map_err(|err| err.to_string())
     }
 }

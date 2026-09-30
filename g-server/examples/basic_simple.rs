@@ -144,7 +144,7 @@ gserver! {
             normalize_endpoint: true,
             // timeout: 1000,
             body_limit: 1,
-            graceful_shutdown: false,
+            graceful_shutdown: true,
             timeout_error: text((StatusCode::GATEWAY_TIMEOUT, "you're running out of time!!"))
             concurrency_limit_error: text(Response::new().with_status(StatusCode::TOO_MANY_REQUESTS).with_text("overload!!")),
             // bad_request_error: text((StatusCode::BAD_REQUEST, BadReq("this".into()))),
@@ -161,6 +161,12 @@ gserver! {
                 interval: 1000
                 with_headers: true
                 key: custom(MyKey)
+            }
+
+            // self-signed
+            tls: {
+                cert: "g-server/examples/tls/cert.pem",
+                key: "g-server/examples/tls/key.pem",
             }
         }
 
@@ -307,7 +313,6 @@ gserver! {
     http("another_with_handler", "127.0.0.1", 42169) {
         get: {
             endpoint: "/ping",
-
         }
     }
 }

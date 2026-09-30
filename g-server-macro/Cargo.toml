@@ -31,6 +31,7 @@ all-features = true
 [features]
 ratelimit = []
 embed = []
+tls = []
 
 [dependencies]
 proc-macro2 = "1"

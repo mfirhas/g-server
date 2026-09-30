@@ -117,6 +117,15 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     });
 
     let listeners = servers.iter().map(|server| {
+        if server
+            .body
+            .config
+            .iter()
+            .any(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_TLS)
+        {
+            return quote! {};
+        }
+
         let name = server_ident(server);
 
         let listener = format_ident!("{}_listener", name);
@@ -156,6 +165,25 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         })
     }) {
         is_graceful = true;
+
+        let tls_grace_handle = if servers.iter().any(|srv| {
+            srv.body
+                .config
+                .iter()
+                .any(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_TLS)
+        }) {
+            (
+                quote! { let handle = g_server::axum_server::Handle::new(); },
+                quote! { let handle = handle.clone(); },
+                quote! { handle.graceful_shutdown(Some(std::time::Duration::from_secs(5))); },
+            )
+        } else {
+            (quote! {}, quote! {}, quote! {})
+        };
+        let tls_grace_handle_init = tls_grace_handle.0;
+        let tls_grace_handle_clone = tls_grace_handle.1;
+        let tls_grace_handle_shutdown = tls_grace_handle.2;
+
         quote! {
             let shutdown_signal = async || {
                 let ctrl_c = async {
@@ -184,24 +212,69 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             };
 
             let shutdown = g_server::tokio_util::sync::CancellationToken::new();
-
-            let signal_shutdown = shutdown.clone();
-
-            g_server::tokio::spawn(async move {
-                shutdown_signal().await;
-                println!("shutdown signal received...");
-                signal_shutdown.cancel();
-                println!("shutting down...");
-            });
+            #tls_grace_handle_init
+            {
+                let signal_shutdown = shutdown.clone();
+                #tls_grace_handle_clone
+                g_server::tokio::spawn(async move {
+                    shutdown_signal().await;
+                    println!("shutdown signal received...");
+                    signal_shutdown.cancel();
+                    println!("shutting down...");
+                    #tls_grace_handle_shutdown
+                });
+            }
         }
     } else {
         quote! {}
     };
 
+    let mut tls_config: Vec<TokenStream2> = vec![];
+    #[cfg(feature = "tls")]
+    {
+        servers.iter().for_each(|server| {
+            if let Some(tls_cfg) = server
+                .body
+                .config
+                .iter()
+                .find(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_TLS)
+            {
+                let name = server_ident(server);
+                let tls_config_name = format_ident!("{}_tls_config", name);
+                let tls_config_value = &tls_cfg.value;
+                let config_factory = quote! {
+                    let #tls_config_name = (#tls_config_value).rustls_config().await
+                            .expect(format!("g-server: failed reading and creating rustls config for {}", #name.0.name).as_str());
+                };
+                tls_config.push(config_factory);
+                tls_config.push(quote! {
+                    println!(
+                        "g-server(TLS): running {} on {}:{}...",
+                        #name.0.name,
+                        #name.0.ip_address,
+                        #name.0.port
+                    );
+                });
+            }
+        });
+    }
+
     let serves = servers.iter().map(|server| {
         let name = server_ident(server);
 
         let listener = format_ident!("{}_listener", name);
+
+        #[cfg(feature = "tls")]
+        {
+            if let Some(_) = server
+                .body
+                .config
+                .iter()
+                .find(|cfg| cfg.name.to_string() == crate::config::CONFIG_FIELD_TLS)
+            {
+                return generate_tls_server(&name, is_graceful);
+            }
+        }
 
         if is_graceful {
             return quote! {
@@ -228,6 +301,8 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             #(#listeners)*
 
             #grace_shutdown_canc_token
+
+            #(#tls_config)*
 
             g_server::tokio::try_join!(
                 #(#serves),*
@@ -1717,4 +1792,30 @@ fn server_ident(server: &crate::server::Server) -> Ident {
 
 fn init_ident(server: &crate::server::Server) -> Ident {
     format_ident!("__init_{}", server.name.value())
+}
+
+// generate TLS server
+#[cfg(feature = "tls")]
+fn generate_tls_server(name: &Ident, is_graceful: bool) -> TokenStream2 {
+    let tls_config_name = format_ident!("{}_tls_config", name);
+
+    let tls_server = quote! {
+        g_server::axum_server::bind_rustls(
+            std::net::SocketAddr::new(
+                #name.0.ip_address.parse().expect(format!("invalid ip address: {}", #name.0.ip_address).as_str()),
+                #name.0.port,
+            ),
+            #tls_config_name.clone(),
+        )
+    };
+
+    if is_graceful {
+        return quote! {
+            #tls_server.handle(handle.clone()).serve(#name.1.into_make_service_with_connect_info::<std::net::SocketAddr>())
+        };
+    }
+
+    quote! {
+        #tls_server.serve(#name.1.into_make_service_with_connect_info::<std::net::SocketAddr>())
+    }
 }

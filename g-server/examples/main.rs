@@ -654,6 +654,17 @@ async fn upload2(
         g_server::axum::extract::multipart::MultipartRejection,
     >,
 ) -> impl IntoResponse {
+    // let tls_config = g_server::axum_server::tls_rustls::RustlsConfig::from_pem_file("", "")
+    //     .await
+    //     .unwrap();
+
+    // let app1 = Router::new();
+    // let addr1 = SocketAddr::from(([0, 0, 0, 0], 3000));
+
+    // let server1 = g_server::axum_server::bind_rustls(addr1, tls_config.clone())
+    //     .serve(app1.into_make_service_with_connect_info::<std::net::SocketAddr>())
+    //     .with_graceful_shutdown();
+
     let serve_dir =
         ServeDir::new("assets").not_found_service(ServeFile::new("assets/404.html".to_string()));
 

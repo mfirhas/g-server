@@ -19,10 +19,13 @@ pub(crate) const CONFIG_FIELD_FILE_DIR: &str = "dir";
 pub(crate) const CONFIG_FIELD_FILE_FALLBACK_FILE: &str = "fallback_file";
 pub(crate) const CONFIG_FIELD_FILE_EMBED: &str = "embed";
 
+pub(crate) const CONFIG_FIELD_TLS: &str = "tls";
+
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_NORMALIZE_ENDPOINT,
     CONFIG_FIELD_GRACEFUL_SHUTDOWN,
+    CONFIG_FIELD_TLS,
 ];
 
 pub(crate) static GLOBAL_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
@@ -82,6 +85,11 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
                 ));
             }
             parse_rate_limit(&name, input)?
+        } else if name.to_string() == CONFIG_FIELD_TLS {
+            if !cfg!(feature = "tls") {
+                return Err(syn::Error::new(name.span(), "`tls` requires feature `tls`"));
+            }
+            parse_tls(&name, input)?
         } else {
             input.parse()?
         };
@@ -422,6 +430,100 @@ fn parse_rate_limit(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     })
 }
 
+fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut cert = None;
+    let mut key = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "cert" => {
+                let cert_expr = content.parse::<Expr>()?;
+                match &cert_expr {
+                    Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(lit_str),
+                        ..
+                    }) => {
+                        let path_str = lit_str.value();
+                        let path = std::path::Path::new(&path_str);
+                        if !path.exists() {
+                            return Err(syn::Error::new(
+                                cert_expr.span(),
+                                "`cert` file doesn't exist",
+                            ));
+                        }
+                    }
+                    Expr::Path(syn::ExprPath { .. }) => {}
+                    _ => {
+                        return Err(syn::Error::new(
+                            cert_expr.span(),
+                            "`cert` accepts literal string, static or const",
+                        ));
+                    }
+                }
+                cert = Some(cert_expr)
+            }
+            "key" => {
+                let key_expr = content.parse::<Expr>()?;
+                match &key_expr {
+                    Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(lit_str),
+                        ..
+                    }) => {
+                        let path_str = lit_str.value();
+                        let path = std::path::Path::new(&path_str);
+                        if !path.exists() {
+                            return Err(syn::Error::new(
+                                key_expr.span(),
+                                "`key` file doesn't exist",
+                            ));
+                        }
+                    }
+                    Expr::Path(syn::ExprPath { .. }) => {}
+                    _ => {
+                        return Err(syn::Error::new(
+                            key_expr.span(),
+                            "`cert` accepts literal string, static or const",
+                        ));
+                    }
+                }
+                key = Some(key_expr)
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("unknown tls config `{field}`"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    let (cert, key) = match (cert, key) {
+        (Some(cert), Some(key)) => (cert, key),
+        _ => {
+            return Err(syn::Error::new(
+                ident.span(),
+                "`cert` and `key` must be present",
+            ));
+        }
+    };
+
+    Ok(syn::parse_quote! {
+        g_server::config::Tls {
+            cert: #cert.to_string(),
+            key: #key.to_string(),
+        }
+    })
+}
+
 /// validate config entries that depend on other config entries.
 // fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
 //     let pairs = [
@@ -696,6 +798,8 @@ impl ConfigEntry {
             CONFIG_FIELD_GRACEFUL_SHUTDOWN => Self::validate_bool(&value),
             CONFIG_FIELD_CORS => Ok(()),
             CONFIG_FIELD_RATE_LIMIT => Ok(()),
+
+            CONFIG_FIELD_TLS => Ok(()),
 
             // file configs validations
             CONFIG_FIELD_FILE_DIR | CONFIG_FIELD_FILE_FALLBACK_FILE => {
