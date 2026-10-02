@@ -21,6 +21,10 @@ pub use ::tower_governor;
 
 #[cfg(feature = "tls")]
 pub use ::axum_server;
+#[cfg(feature = "tls")]
+pub use ::rustls;
+#[cfg(feature = "tls")]
+pub use ::rustls_pemfile;
 
 pub type StatusCode = ::http::StatusCode;
 pub type HeaderMap = ::http::HeaderMap;

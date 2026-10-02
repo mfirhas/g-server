@@ -387,16 +387,76 @@ pub struct Tls {
     pub key: String,
     /// http port as source of redirection to https
     pub redirect_from_port: Option<u16>,
+    /// list of client ca's certs for mTLS
+    pub client_cas: Option<Vec<String>>,
 }
 
 impl Tls {
     #[cfg(feature = "tls")]
-    pub async fn rustls_config(
-        &self,
-    ) -> Result<crate::axum_server::tls_rustls::RustlsConfig, String> {
+    pub async fn tls_config(&self) -> Result<crate::axum_server::tls_rustls::RustlsConfig, String> {
         crate::axum_server::tls_rustls::RustlsConfig::from_pem_file(&self.cert, &self.key)
             .await
             .map_err(|err| err.to_string())
+    }
+
+    #[cfg(feature = "tls")]
+    pub fn mtls_config(&self) -> Result<crate::axum_server::tls_rustls::RustlsConfig, String> {
+        use crate::rustls::{RootCertStore, ServerConfig, server::WebPkiClientVerifier};
+        use crate::rustls_pemfile::{certs, private_key};
+
+        if self.client_cas.is_none() {
+            return Err("client cas are empty".into());
+        }
+
+        let client_cas = if let Some(cas) = &self.client_cas
+            && !cas.is_empty()
+        {
+            cas
+        } else {
+            return Err("client cas are empty".into());
+        };
+
+        let mut roots = RootCertStore::empty();
+
+        for ca_path in client_cas {
+            let file = std::fs::File::open(ca_path).map_err(|err| err.to_string())?;
+            let mut reader = std::io::BufReader::new(file);
+
+            for cert in certs(&mut reader) {
+                roots
+                    .add(cert.map_err(|err| err.to_string())?)
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+
+        let verifier = WebPkiClientVerifier::builder(std::sync::Arc::new(roots))
+            .build()
+            .map_err(|err| err.to_string())?;
+
+        let server_cert = std::fs::File::open(&self.cert).map_err(|err| err.to_string())?;
+        let mut server_cert = std::io::BufReader::new(server_cert);
+
+        let server_key = std::fs::File::open(&self.key).map_err(|err| err.to_string())?;
+        let mut server_key = std::io::BufReader::new(server_key);
+
+        let mut config = ServerConfig::builder()
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(
+                certs(&mut server_cert)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|err| err.to_string())?,
+                private_key(&mut server_key)
+                    .map_err(|err| err.to_string())?
+                    .ok_or_else(|| std::io::Error::other("no private key found"))
+                    .map_err(|err| err.to_string())?,
+            )
+            .map_err(|err| err.to_string())?;
+
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+        Ok(crate::axum_server::tls_rustls::RustlsConfig::from_config(
+            std::sync::Arc::new(config),
+        ))
     }
 
     #[cfg(feature = "tls")]

@@ -167,7 +167,16 @@ gserver! {
             tls: {
                 cert: "g-server/examples/tls/cert.pem",
                 key: "g-server/examples/tls/key.pem",
-                redirect_from: 42269,
+                // redirect_from: 42269,
+                /* Test with:
+                *  curl --cacert g-server/examples/tls/cert.pem \
+                *       --cert g-server/examples/mtls/allowed_clients/client-cert.pem \
+                *       --key g-server/examples/mtls/allowed_clients/client-key.pem \
+                *       https://localhost:42069/ping
+                */
+                client_cas: [
+                    "g-server/examples/mtls/allowed_clients/client-ca.pem"
+                ]
             }
         }
 
@@ -312,6 +321,22 @@ gserver! {
     }
 
     http("another_with_handler", "127.0.0.1", 42169) {
+        config: {
+            tls: {
+                cert: "g-server/examples/tls/cert.pem",
+                key: "g-server/examples/tls/key.pem",
+                // redirect_from: 42269,
+                /* Test with:
+                *  curl --cacert g-server/examples/tls/cert.pem \
+                *       --cert g-server/examples/mtls/allowed_clients/client-cert.pem \
+                *       --key g-server/examples/mtls/allowed_clients/client-key.pem \
+                *       https://localhost:42069/ping
+                */
+                // client_cas: [
+                //     "g-server/examples/mtls/allowed_clients/client-ca.pem"
+                // ]
+            }
+        }
         get: {
             endpoint: "/ping",
         }

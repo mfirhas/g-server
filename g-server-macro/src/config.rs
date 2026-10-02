@@ -437,6 +437,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let mut cert = None;
     let mut key = None;
     let mut redirect_from_port = None;
+    let mut client_cas = None;
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -499,6 +500,34 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             "redirect_from" => {
                 redirect_from_port = Some(content.parse::<Expr>()?);
             }
+            "client_cas" => {
+                let cas = content.parse::<ExprArray>()?;
+                for ca in cas.elems.iter() {
+                    match ca {
+                        Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Str(lit_str),
+                            ..
+                        }) => {
+                            let path_str = lit_str.value();
+                            let path = std::path::Path::new(&path_str);
+                            if !path.is_file() || !path.exists() {
+                                return Err(syn::Error::new(
+                                    ca.span(),
+                                    format!("\"{}\" file doesn't exist", lit_str.value()),
+                                ));
+                            }
+                        }
+                        Expr::Path(syn::ExprPath { .. }) => {}
+                        _ => {
+                            return Err(syn::Error::new(
+                                ca.span(),
+                                "client ca certs accept literal string, static or const",
+                            ));
+                        }
+                    }
+                }
+                client_cas = Some(cas);
+            }
             _ => {
                 return Err(syn::Error::new(
                     field.span(),
@@ -519,10 +548,43 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             ));
         }
     };
+
+    // 1 server cannot serve public TLS and mTLS at the same time
+    if redirect_from_port.is_some() && client_cas.is_some() {
+        return Err(syn::Error::new(
+            ident.span(),
+            "`redirect_from` is only for public TLS and `client_cas` is only for mTLS, both cannot co-exist together.",
+        ));
+    }
+
     let redirect_port = if let Some(port) = redirect_from_port {
         quote! { redirect_from_port: Some(#port), }
     } else {
         quote! { redirect_from_port: None, }
+    };
+
+    let client_cas = if let Some(client_cas) = client_cas {
+        if client_cas.elems.is_empty() {
+            return Err(syn::Error::new(
+                ident.span(),
+                "`client_cas` may not be empty for mTLS configuration",
+            ));
+        }
+        let elements = client_cas.elems.iter().map(|expr| {
+            quote! {
+                #expr.to_string()
+            }
+        });
+
+        quote! {
+            client_cas: Some(vec![
+                #(#elements),*
+            ])
+        }
+    } else {
+        quote! {
+            client_cas: None,
+        }
     };
 
     Ok(syn::parse_quote! {
@@ -530,6 +592,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             cert: #cert.to_string(),
             key: #key.to_string(),
             #redirect_port
+            #client_cas
         }
     })
 }

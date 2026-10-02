@@ -243,21 +243,32 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                 let tls_config_name = format_ident!("{}_tls_config", name);
                 let tls_config_value = &tls_cfg.value;
                 let config_factory = quote! {
-                    let #tls_config_name = (#tls_config_value).rustls_config().await
-                            .expect(format!("g-server: failed reading and creating rustls config for {}", #name.0.name).as_str());
+                    let #tls_config_name = if (#tls_config_value).client_cas.is_some() {
+                        (#tls_config_value).mtls_config()
+                            .expect(format!("g-server: failed reading and creating mtls config for {}", #name.0.name).as_str())
+                    } else {
+                        (#tls_config_value).tls_config().await
+                            .expect(format!("g-server: failed reading and creating tls config for {}", #name.0.name).as_str())
+                    };
                 };
                 let host = server.ip.value();
                 let https_port: u16 = server.port.base10_parse().expect("invalid port, expect u16");
                 let redirect_http_to_https = quote! {
-                    if let Some(http_port) = (#tls_config_value).redirect_from_port {
+                    if (#tls_config_value).client_cas.is_none() && let Some(http_port) = (#tls_config_value).redirect_from_port {
                         g_server::tokio::spawn(g_server::config::Tls::redirect_http_to_https(#host, http_port, #https_port));
                     }
                 };
                 tls_config.push(config_factory);
                 tls_config.push(redirect_http_to_https);
                 tls_config.push(quote! {
+                    let running_msg = if (#tls_config_value).client_cas.is_some() {
+                        "mTLS"
+                    } else {
+                        "TLS"
+                    };
                     println!(
-                        "g-server(TLS): running {} on {}:{}...",
+                        "g-server({}): running {} on {}:{}...",
+                        running_msg,
                         #name.0.name,
                         #name.0.ip_address,
                         #name.0.port
