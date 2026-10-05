@@ -23,7 +23,11 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         }
     }
 
-    let servers = input.servers.iter().collect::<Vec<_>>();
+    let servers = input
+        .servers
+        .iter()
+        .filter(|s| matches!(&s.kind, crate::server::ServerKind::Http))
+        .collect::<Vec<_>>();
 
     let main = generate_main(&servers);
 
@@ -34,6 +38,7 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
     // custom middlewares
     let norm_endpoint_mw = normalize_endpoint_middleware();
+    let request_id_header_mw = request_id_header_middleware();
 
     let initializers = servers
         .iter()
@@ -67,6 +72,7 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         #route_infra_mw
 
         #norm_endpoint_mw
+        #request_id_header_mw
 
         #(#initializers)*
 
@@ -428,6 +434,15 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 router = router.layer(cors.clone().layer())
             }
 
+            if let Some(ref req_id) = global_config.request_id {
+                router = router.layer(
+                    g_server::axum::middleware::from_fn_with_state(
+                        req_id.clone(),
+                        request_id_header_middleware,
+                    )
+                )
+            }
+
             if let Some(fallback_err) = global_config.fallback_error {
                 router = router.fallback(
                     move || async move {
@@ -542,6 +557,15 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 router = router.route_layer(cors.clone().layer())
             }
 
+            if let Some(ref req_id) = config.request_id {
+                router = router.route_layer(
+                    g_server::axum::middleware::from_fn_with_state(
+                        req_id.clone(),
+                        request_id_header_middleware,
+                    )
+                )
+            }
+
             if let Some(fallback_err) = config.fallback_error {
                 router = router.fallback(
                     move || async move {
@@ -604,6 +628,45 @@ fn normalize_endpoint_middleware() -> TokenStream2 {
             }
 
             g_server::axum::response::Redirect::permanent(&normalized).into_response()
+        }
+    }
+}
+
+fn request_id_header_middleware() -> TokenStream2 {
+    quote! {
+        pub(crate) async fn request_id_header_middleware(
+            g_server::axum::extract::State(req_id): g_server::axum::extract::State<
+                g_server::config::RequestId,
+            >,
+            mut request: g_server::axum::extract::Request,
+            next: g_server::axum::middleware::Next,
+        ) -> g_server::axum::response::Response {
+            let request_id = match request.headers_mut().entry(&req_id.header) {
+                g_server::http::header::Entry::Occupied(entry) => entry.get().clone(),
+                g_server::http::header::Entry::Vacant(entry) => {
+                    let value = match req_id.try_new_req_id() {
+                        Ok(id) => id,
+                        Err(err) => {
+                            return (
+                                g_server::StatusCode::INTERNAL_SERVER_ERROR,
+                                format!("g-server: failed creating new request id: {}", err),
+                            )
+                                .into_response();
+                        }
+                    };
+                    entry.insert(value.clone());
+                    value
+                }
+            };
+
+            let mut response = next.run(request).await;
+
+            if let g_server::http::header::Entry::Vacant(entry) = response.headers_mut().entry(&req_id.header)
+            {
+                entry.insert(request_id);
+            }
+
+            response
         }
     }
 }

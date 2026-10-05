@@ -41,6 +41,7 @@ bytes = "1"
 axum = { version = "0.8.9", features = ["multipart", "http2"] }
 serde = { version = "1", features = ["derive"] }
 serde_urlencoded = "0.7"
+uuid = { version = "1.27", features = ["fast-rng", "v4", "v7"] }
 
 tower_governor = { version = "0.8", optional = true }
 rust-embed = { version = "8", optional = true }

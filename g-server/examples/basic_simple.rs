@@ -136,10 +136,16 @@ const FULL: &str = "<h1>full...!!</h1>";
 
 const PATH: &str = "//this";
 
+static HDR: &str = "x-anu";
+
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         app_context: Context,
         config: {
+            request_id: {
+                header: HDR,
+                id: uuid_v7
+            },
             fallback_error: html((StatusCode::NOT_FOUND, "<h2>NOT FOUND!!!!</h2>"))
             normalize_endpoint: true,
             // timeout: 1000,
@@ -174,9 +180,9 @@ gserver! {
                 *       --key g-server/examples/mtls/allowed_clients/client-key.pem \
                 *       https://localhost:42069/ping
                 */
-                client_cas: [
-                    "g-server/examples/mtls/allowed_clients/client-ca.pem"
-                ]
+                // client_cas: [
+                //     "g-server/examples/mtls/allowed_clients/client-ca.pem"
+                // ]
             }
         }
 

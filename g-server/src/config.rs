@@ -29,6 +29,9 @@ pub struct Config<RLKey = ()> {
     /// Fallback error
     pub fallback_error: Option<fn() -> ::axum::response::Response>,
 
+    /// Request id
+    pub request_id: Option<RequestId>,
+
     /// Cors
     pub cors: Option<Cors>,
 
@@ -67,11 +70,53 @@ impl Config {
             concurrency_limit_error: self.concurrency_limit_error,
             bad_request_error: self.bad_request_error,
             fallback_error: self.fallback_error,
+            request_id: self.request_id,
             cors: self.cors,
             dir: self.dir,
             fallback_file: self.fallback_file,
             embed: self.embed,
             graceful_shutdown: self.graceful_shutdown,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestId {
+    pub id: RequestIdType,
+    pub header: crate::http::HeaderName,
+}
+
+const DEFAULT_REQUEST_ID_HEADER: &str = "x-request-id";
+
+impl Default for RequestId {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            id: RequestIdType::UUIDv4,
+            header: crate::http::HeaderName::from_static(DEFAULT_REQUEST_ID_HEADER),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RequestIdType {
+    UUIDv4,
+    UUIDv7,
+    Custom(fn() -> Result<crate::http::HeaderValue, String>),
+}
+
+impl RequestId {
+    pub fn try_new_req_id(&self) -> Result<crate::http::HeaderValue, String> {
+        match self.id {
+            RequestIdType::UUIDv4 => {
+                crate::http::HeaderValue::from_str(crate::uuid::Uuid::new_v4().to_string().as_str())
+                    .map_err(|err| err.to_string())
+            }
+            RequestIdType::UUIDv7 => {
+                crate::http::HeaderValue::from_str(crate::uuid::Uuid::now_v7().to_string().as_str())
+                    .map_err(|err| err.to_string())
+            }
+            RequestIdType::Custom(val) => val(),
         }
     }
 }

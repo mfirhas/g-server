@@ -12,6 +12,7 @@ pub(crate) const CONFIG_FIELD_TIMEOUT_ERROR: &str = "timeout_error";
 pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit_error";
 pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
 pub(crate) const CONFIG_FIELD_FALLBACK_ERROR: &str = "fallback_error";
+pub(crate) const CONFIG_FIELD_REQUEST_ID: &str = "request_id";
 pub(crate) const CONFIG_FIELD_CORS: &str = "cors";
 pub(crate) const CONFIG_FIELD_RATE_LIMIT: &str = "rate_limit";
 pub(crate) const CONFIG_FIELD_GRACEFUL_SHUTDOWN: &str = "graceful_shutdown";
@@ -75,7 +76,9 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
 
         input.parse::<Token![:]>()?;
 
-        let value: Expr = if name.to_string() == CONFIG_FIELD_CORS {
+        let value: Expr = if name.to_string() == CONFIG_FIELD_REQUEST_ID {
+            parse_request_id(&name, input)?
+        } else if name.to_string() == CONFIG_FIELD_CORS {
             parse_cors(input)?
         } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
             if !cfg!(feature = "ratelimit") {
@@ -103,6 +106,112 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
     }
 
     Ok(entries)
+}
+
+fn parse_request_id(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut id: Option<Expr> = None;
+    let mut header: Option<Expr> = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "id" => {
+                let key_ident: Ident = content.parse()?;
+                if key_ident.to_string() == "uuid_v4" {
+                    id = Some(syn::parse_quote!(g_server::config::RequestIdType::UUIDv4));
+                } else if key_ident.to_string() == "uuid_v7" {
+                    id = Some(syn::parse_quote!(g_server::config::RequestIdType::UUIDv7));
+                } else if key_ident.to_string() == "custom" {
+                    let key_content;
+                    syn::parenthesized!(key_content in content);
+                    let val: syn::Path = key_content.parse()?;
+                    let func = val
+                        .segments
+                        .last()
+                        .expect("expect `fn() -> Result<crate::http::HeaderValue, String>`");
+                    id = Some(syn::parse_quote!( g_server::config::RequestIdType::Custom(#func) ));
+                } else {
+                    return Err(syn::Error::new(
+                        key_ident.span(),
+                        "invalid `id` type: supported `uuid_v4`, `uuid_v7`, `custom(fn() -> String)`",
+                    ));
+                }
+            }
+            "header" => {
+                let hdr = content.parse::<Expr>()?;
+                match &hdr {
+                    syn::Expr::Lit(expr_lit) => {
+                        if let syn::Lit::Str(value) = &expr_lit.lit {
+                            let value = value.value();
+                            if !value
+                                .chars()
+                                .filter(|c| c.is_alphabetic())
+                                .all(|c| c.is_lowercase())
+                            {
+                                return Err(syn::Error::new(
+                                    hdr.span(),
+                                    "`header` name must be declared as all lower-case",
+                                ));
+                            }
+                            header = Some(
+                                syn::parse_quote!(g_server::http::HeaderName::from_static(#value)),
+                            );
+                        }
+                    }
+
+                    syn::Expr::Path(expr_path) => {
+                        let path = &expr_path
+                            .path
+                            .segments
+                            .last()
+                            .expect("expect valid const or static string");
+                        header = Some(syn::parse_quote!(
+                            {
+                                if !#path.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_lowercase()) {
+                                    panic!("g-server: `request_id` header name declaration must be all lower-case")
+                                }
+                                g_server::http::HeaderName::from_static(#path)
+                            }
+                        ))
+                    }
+
+                    _ => {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "`header` expects valid http header value from literal string, const, or static",
+                        ));
+                    }
+                }
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("unknown `request_id` config `{field}`"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    match (id, header) {
+        (Some(id), Some(header)) => {
+            Ok(syn::parse_quote!(g_server::config::RequestId { id: #id, header: #header }))
+        }
+        (Some(id), None) => Ok(
+            syn::parse_quote!(g_server::config::RequestId { id: #id, header: g_server::http::HeaderName::from_static("X-Request-Id") }),
+        ),
+        (None, Some(header)) => Ok(
+            syn::parse_quote!(g_server::config::RequestId { id: g_server::config::RequestIdType::UUIDv4, header: #header }),
+        ),
+        _ => Ok(syn::parse_quote!(g_server::config::RequestId::default())),
+    }
 }
 
 fn parse_cors(input: ParseStream<'_>) -> Result<Expr> {
@@ -869,6 +978,7 @@ impl ConfigEntry {
             CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
             CONFIG_FIELD_GRACEFUL_SHUTDOWN => Self::validate_bool(&value),
+            CONFIG_FIELD_REQUEST_ID => Ok(()),
             CONFIG_FIELD_CORS => Ok(()),
             CONFIG_FIELD_RATE_LIMIT => Ok(()),
 

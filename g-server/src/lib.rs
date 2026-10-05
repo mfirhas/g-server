@@ -10,6 +10,7 @@ pub use ::tokio;
 pub use ::tokio_util;
 pub use ::tower;
 pub use ::tower_http;
+pub use ::uuid;
 
 #[cfg(feature = "embed")]
 pub use ::mime_guess;
