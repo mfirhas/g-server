@@ -17,7 +17,10 @@ impl Context {
     }
 }
 
-async fn ping(_: Context, _: Request) -> Result<Response<String>, Response<String>> {
+#[tracing::instrument]
+async fn ping(_: Context, req: Request) -> Result<Response<String>, Response<String>> {
+    println!("===>");
+    tracing::info!(anu = 123, "PING");
     Ok(Response::new().with_text("pong".into()))
 }
 
@@ -142,6 +145,10 @@ gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         app_context: Context,
         config: {
+            tracing: {
+                format: pretty
+                level: error
+            }
             request_id: {
                 header: HDR,
                 id: uuid_v7

@@ -27,6 +27,11 @@ pub use ::rustls;
 #[cfg(feature = "tls")]
 pub use ::rustls_pemfile;
 
+#[cfg(feature = "tracing")]
+pub use ::tracing;
+#[cfg(feature = "tracing")]
+pub use ::tracing_subscriber;
+
 pub type StatusCode = ::http::StatusCode;
 pub type HeaderMap = ::http::HeaderMap;
 pub type Bytes = ::bytes::Bytes;

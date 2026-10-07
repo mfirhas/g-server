@@ -22,11 +22,14 @@ pub(crate) const CONFIG_FIELD_FILE_EMBED: &str = "embed";
 
 pub(crate) const CONFIG_FIELD_TLS: &str = "tls";
 
+pub(crate) const CONFIG_FIELD_TRACING: &str = "tracing";
+
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_NORMALIZE_ENDPOINT,
     CONFIG_FIELD_GRACEFUL_SHUTDOWN,
     CONFIG_FIELD_TLS,
+    CONFIG_FIELD_TRACING,
 ];
 
 pub(crate) static GLOBAL_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
@@ -80,6 +83,8 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
             parse_request_id(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_CORS {
             parse_cors(input)?
+        } else if name.to_string() == CONFIG_FIELD_TRACING {
+            parse_tracing(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
             if !cfg!(feature = "ratelimit") {
                 return Err(syn::Error::new(
@@ -706,6 +711,108 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     })
 }
 
+fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut level: Option<Expr> = None;
+    let mut format: Option<Expr> = None;
+    let mut time_offset: Option<Expr> = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "level" => {
+                let level_ident: Ident = content.parse()?;
+                match level_ident.to_string().as_str() {
+                    "error" => {
+                        level = Some(syn::parse_quote!(g_server::config::TracingLevel::Error))
+                    }
+                    "warn" => level = Some(syn::parse_quote!(g_server::config::TracingLevel::Warn)),
+                    "info" => level = Some(syn::parse_quote!(g_server::config::TracingLevel::Info)),
+                    "debug" => {
+                        level = Some(syn::parse_quote!(g_server::config::TracingLevel::Debug))
+                    }
+                    "trace" => {
+                        level = Some(syn::parse_quote!(g_server::config::TracingLevel::Trace))
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "invalid tracing max level, expected: error, warn, info, debug, or trace (in order from left to right)",
+                        ));
+                    }
+                }
+            }
+            "format" => {
+                let format_ident: Ident = content.parse()?;
+                match format_ident.to_string().as_str() {
+                    "default" => {
+                        format = Some(syn::parse_quote!(g_server::config::TracingFormat::Default))
+                    }
+                    "pretty" => {
+                        format = Some(syn::parse_quote!(g_server::config::TracingFormat::Pretty))
+                    }
+                    "json" => {
+                        format = Some(syn::parse_quote!(g_server::config::TracingFormat::Json))
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "invalid tracing format, expected: default, pretty, or json",
+                        ));
+                    }
+                }
+            }
+            "time_offset" => {
+                let time_offset_ident: Ident = content.parse()?;
+                match time_offset_ident.to_string().as_str() {
+                    "utc" => {
+                        time_offset =
+                            Some(syn::parse_quote!(g_server::config::TracingTimeOffset::UTC))
+                    }
+                    "local" => {
+                        time_offset = Some(syn::parse_quote!(
+                            g_server::config::TracingTimeOffset::Local
+                        ))
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            ident.span(),
+                            "invalid tracing format, expected: default, pretty, or json",
+                        ));
+                    }
+                }
+            }
+
+            _ => {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "invalid tracing config, expected: level, format or time_offset",
+                ));
+            }
+        }
+        crate::consume_comma(&content)?;
+    }
+
+    let level = level.unwrap_or(syn::parse_quote!(g_server::config::TracingLevel::default()));
+    let format = format.unwrap_or(syn::parse_quote!(g_server::config::TracingFormat::default()));
+    let time_offset = time_offset.unwrap_or(syn::parse_quote!(
+        g_server::config::TracingTimeOffset::default()
+    ));
+
+    Ok(syn::parse_quote! {
+        g_server::config::Tracing {
+            level: #level,
+            format: #format,
+            time_offset: #time_offset,
+        }
+    })
+}
+
 /// validate config entries that depend on other config entries.
 // fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
 //     let pairs = [
@@ -983,6 +1090,8 @@ impl ConfigEntry {
             CONFIG_FIELD_RATE_LIMIT => Ok(()),
 
             CONFIG_FIELD_TLS => Ok(()),
+
+            CONFIG_FIELD_TRACING => Ok(()),
 
             // file configs validations
             CONFIG_FIELD_FILE_DIR | CONFIG_FIELD_FILE_FALLBACK_FILE => {

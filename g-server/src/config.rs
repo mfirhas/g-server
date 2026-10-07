@@ -17,6 +17,9 @@ pub struct Config<RLKey = ()> {
     /// toggle graceful shutdown
     pub graceful_shutdown: Option<bool>,
 
+    /// Tracing config
+    pub tracing: Option<Tracing>,
+
     /// TLS config
     pub tls: Option<Tls>,
 
@@ -76,6 +79,7 @@ impl Config {
             fallback_file: self.fallback_file,
             embed: self.embed,
             graceful_shutdown: self.graceful_shutdown,
+            tracing: self.tracing,
         }
     }
 }
@@ -544,4 +548,171 @@ impl Tls {
             .await
         }
     }
+}
+
+/// Tracing configs
+#[cfg(feature = "tracing")]
+#[derive(Debug, Clone)]
+pub struct Tracing {
+    /// Setup maximum tracing level: error -> warn -> info -> debug, -> trace,
+    ///
+    /// error is minimum level.
+    ///
+    /// trace is maximum level.
+    ///
+    /// RUST_LOG is listened, then smallest wins.
+    ///
+    /// Default is `info`
+    pub level: TracingLevel,
+
+    /// Tracing logs format:
+    ///
+    /// - `default`: normal one-line log format. (default)
+    /// - `pretty`: pretty multi-line log format.
+    /// - `json`: json format
+    pub format: TracingFormat,
+
+    /// Trace logs timestamp offset.
+    ///
+    /// Time format is RFC 3339.
+    ///
+    /// Defaults to `utc`.
+    pub time_offset: TracingTimeOffset,
+}
+
+#[cfg(feature = "tracing")]
+impl Default for Tracing {
+    fn default() -> Self {
+        Tracing {
+            level: TracingLevel::default(),
+            format: TracingFormat::default(),
+            time_offset: TracingTimeOffset::default(),
+        }
+    }
+}
+
+#[cfg(feature = "tracing")]
+impl Tracing {
+    pub fn init(&self) -> Result<(), String> {
+        use crate::tracing;
+        use crate::tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt};
+
+        let level = match self.level {
+            TracingLevel::Error => tracing::Level::ERROR,
+            TracingLevel::Warn => tracing::Level::WARN,
+            TracingLevel::Info => tracing::Level::INFO,
+            TracingLevel::Debug => tracing::Level::DEBUG,
+            TracingLevel::Trace => tracing::Level::TRACE,
+        };
+
+        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level.as_str()));
+
+        let span_events = tracing_subscriber::fmt::format::FmtSpan::CLOSE;
+
+        let utc_timer = tracing_subscriber::fmt::time::ChronoUtc::rfc_3339();
+
+        let local_timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
+
+        let fmt_layer_utc_default = tracing_subscriber::fmt::layer()
+            .with_span_events(span_events.clone())
+            .with_timer(utc_timer.clone());
+        let fmt_layer_utc_pretty = tracing_subscriber::fmt::layer()
+            .with_span_events(span_events.clone())
+            .with_timer(utc_timer.clone())
+            .pretty();
+        let fmt_layer_utc_json = tracing_subscriber::fmt::layer()
+            .with_span_events(span_events.clone())
+            .with_timer(utc_timer)
+            .json();
+
+        let fmt_layer_local_default = tracing_subscriber::fmt::layer()
+            .with_span_events(span_events.clone())
+            .with_timer(local_timer.clone());
+        let fmt_layer_local_pretty = tracing_subscriber::fmt::layer()
+            .with_span_events(span_events.clone())
+            .with_timer(local_timer.clone())
+            .pretty();
+        let fmt_layer_local_json = tracing_subscriber::fmt::layer()
+            .with_span_events(span_events)
+            .with_timer(local_timer)
+            .json();
+
+        match (self.time_offset, self.format) {
+            (TracingTimeOffset::UTC, TracingFormat::Default) => {
+                tracing_subscriber::Registry::default()
+                    .with(env_filter)
+                    .with(fmt_layer_utc_default)
+                    .try_init()
+                    .map_err(|err| err.to_string())
+            }
+            (TracingTimeOffset::UTC, TracingFormat::Pretty) => {
+                tracing_subscriber::Registry::default()
+                    .with(env_filter)
+                    .with(fmt_layer_utc_pretty)
+                    .try_init()
+                    .map_err(|err| err.to_string())
+            }
+            (TracingTimeOffset::UTC, TracingFormat::Json) => {
+                tracing_subscriber::Registry::default()
+                    .with(env_filter)
+                    .with(fmt_layer_utc_json)
+                    .try_init()
+                    .map_err(|err| err.to_string())
+            }
+
+            (TracingTimeOffset::Local, TracingFormat::Default) => {
+                tracing_subscriber::Registry::default()
+                    .with(env_filter)
+                    .with(fmt_layer_local_default)
+                    .try_init()
+                    .map_err(|err| err.to_string())
+            }
+            (TracingTimeOffset::Local, TracingFormat::Pretty) => {
+                tracing_subscriber::Registry::default()
+                    .with(env_filter)
+                    .with(fmt_layer_local_pretty)
+                    .try_init()
+                    .map_err(|err| err.to_string())
+            }
+            (TracingTimeOffset::Local, TracingFormat::Json) => {
+                tracing_subscriber::Registry::default()
+                    .with(env_filter)
+                    .with(fmt_layer_local_json)
+                    .try_init()
+                    .map_err(|err| err.to_string())
+            }
+        }
+    }
+}
+
+/// Tracing levels
+///
+/// The order from top to bottom is from less verbose to most verbose.
+#[cfg(feature = "tracing")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TracingLevel {
+    Error,
+    Warn,
+    #[default]
+    Info,
+    Debug,
+    Trace,
+}
+
+#[cfg(feature = "tracing")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TracingFormat {
+    #[default]
+    Default,
+    Pretty,
+    Json,
+}
+
+#[cfg(feature = "tracing")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TracingTimeOffset {
+    #[default]
+    UTC,
+    Local,
 }

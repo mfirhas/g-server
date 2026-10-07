@@ -39,6 +39,7 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
     // custom middlewares
     let norm_endpoint_mw = normalize_endpoint_middleware();
     let request_id_header_mw = request_id_header_middleware();
+    let tracing_mw = tracing_middleware();
 
     let initializers = servers
         .iter()
@@ -73,6 +74,7 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
         #norm_endpoint_mw
         #request_id_header_mw
+        #tracing_mw
 
         #(#initializers)*
 
@@ -318,12 +320,32 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         }
     });
 
+    let tracing_init = if let Some(config) = servers.iter().find_map(|server| {
+        server
+            .body
+            .config
+            .iter()
+            .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
+    }) {
+        let tracing_config = &config.value;
+        quote! {
+            match (#tracing_config).init() {
+                Ok(()) => {},
+                Err(err) => panic!("g-server: failed initializing tracing: {}", err),
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[g_server::tokio::main(crate = "g_server::tokio")]
         async fn main() {
             #(#initializers)*
 
             #(#listeners)*
+
+            #tracing_init
 
             #grace_shutdown_canc_token
 
@@ -369,6 +391,27 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                         .no_br()
                         .no_zstd(),
                 });
+            }
+
+            #[cfg(feature = "tracing")]
+            {
+                if let Some(_) = global_config.tracing {
+                    if let Some(ref req_id) = global_config.request_id {
+                        router = router.layer(
+                            g_server::axum::middleware::from_fn_with_state(
+                                Some(req_id.header.clone()),
+                                tracing_middleware,
+                            )
+                        )
+                    } else {
+                        router = router.layer(
+                            g_server::axum::middleware::from_fn_with_state(
+                                None,
+                                tracing_middleware,
+                            )
+                        )
+                    }
+                }
             }
 
             if let Some(bytes) = global_config.body_limit {
@@ -492,6 +535,27 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                         .no_br()
                         .no_zstd(),
                 });
+            }
+
+            #[cfg(feature = "tracing")]
+            {
+                if let Some(_) = config.tracing {
+                    if let Some(ref req_id) = config.request_id {
+                        router = router.route_layer(
+                            g_server::axum::middleware::from_fn_with_state(
+                                Some(req_id.header.clone()),
+                                tracing_middleware,
+                            )
+                        )
+                    } else {
+                        router = router.route_layer(
+                            g_server::axum::middleware::from_fn_with_state(
+                                None,
+                                tracing_middleware,
+                            )
+                        )
+                    }
+                }
             }
 
             if let Some(bytes) = config.body_limit {
@@ -667,6 +731,53 @@ fn request_id_header_middleware() -> TokenStream2 {
             }
 
             response
+        }
+    }
+}
+
+fn tracing_middleware() -> TokenStream2 {
+    quote! {
+        #[cfg(feature = "tracing")]
+        pub(crate) async fn tracing_middleware(
+            g_server::axum::extract::State(req_id_header): g_server::axum::extract::State<
+                Option<g_server::http::HeaderName>,
+            >,
+            request: g_server::axum::extract::Request,
+            next: g_server::axum::middleware::Next,
+        ) -> g_server::axum::response::Response {
+            use g_server::tracing::Instrument;
+
+            let span = if let Some(req_id_header) = req_id_header {
+                match request.headers().get(&req_id_header) {
+                    Some(value) => g_server::tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        request_id = %value.to_str().unwrap_or("<invalid>"),
+                    ),
+                    None => g_server::tracing::info_span!(
+                        "request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                    ),
+                }
+            } else {
+                g_server::tracing::info_span!(
+                    "request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                )
+            };
+
+            g_server::tracing::info!("::REQUEST_BEGIN::");
+
+            let resp = next.run(request)
+                .instrument(span)
+                .await;
+
+            g_server::tracing::info!("::REQUEST_END::");
+
+            resp
         }
     }
 }
