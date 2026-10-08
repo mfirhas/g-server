@@ -17,6 +17,9 @@ pub struct Config<RLKey = ()> {
     /// toggle graceful shutdown
     pub graceful_shutdown: Option<bool>,
 
+    /// Logging config
+    pub logging: Option<Logging>,
+
     /// Tracing config
     pub tracing: Option<Tracing>,
 
@@ -79,6 +82,7 @@ impl Config {
             fallback_file: self.fallback_file,
             embed: self.embed,
             graceful_shutdown: self.graceful_shutdown,
+            logging: self.logging,
             tracing: self.tracing,
         }
     }
@@ -550,6 +554,113 @@ impl Tls {
     }
 }
 
+// WARN: PUBLIC
+/// Logging configs
+#[derive(Debug, Clone)]
+pub struct Logging {
+    /// Max log level.
+    ///
+    /// All levels above this won't be logged.
+    pub level: LogLevel,
+    /// Logging format: default(normal oneline log), pretty(multiline), json.
+    pub format: LogFormat,
+    /// Timestamp offset: utc(0) or local
+    pub time_offset: LogTimeOffset,
+
+    /// `init()` function to initializes the logger
+    pub init_fn: fn(LoggerInitParams) -> Result<(), String>,
+}
+
+impl Logging {
+    pub fn init(self) -> Result<(), String> {
+        println!("Initializing logging...");
+        (self.init_fn)(self.into())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoggerInitParams {
+    /// Max log level.
+    ///
+    /// All levels above this won't be logged.
+    pub level: LogLevel,
+    /// Logging format: default(normal oneline log), pretty(multiline), json.
+    pub format: LogFormat,
+    /// Timestamp offset: utc(0) or local
+    pub time_offset: LogTimeOffset,
+}
+
+impl From<Logging> for LoggerInitParams {
+    #[inline]
+    fn from(value: Logging) -> Self {
+        LoggerInitParams {
+            level: value.level,
+            format: value.format,
+            time_offset: value.time_offset,
+        }
+    }
+}
+
+pub fn default_logger_init(params: LoggerInitParams) -> Result<(), String> {
+    use std::io::Write;
+
+    let mut builder = env_logger::Builder::new();
+
+    builder
+        .filter_level(params.level.into())
+        .format(move |buf, record| {
+            let timestamp = match params.time_offset {
+                LogTimeOffset::UTC => chrono::Utc::now().to_rfc3339(),
+                LogTimeOffset::Local => chrono::Local::now().to_rfc3339(),
+            };
+
+            match params.format {
+                LogFormat::Default => {
+                    writeln!(buf, "{} [{}] {}", timestamp, record.level(), record.args(),)
+                }
+
+                LogFormat::Pretty => writeln!(
+                    buf,
+                    "\n{}\n  level: {}\n  target: {}\n  message: {}\n",
+                    timestamp,
+                    record.level(),
+                    record.target(),
+                    record.args(),
+                ),
+
+                LogFormat::Json => {
+                    let message = record.args().to_string();
+
+                    serde_json::to_writer(
+                        &mut *buf,
+                        &serde_json::json!({
+                            "timestamp": timestamp,
+                            "level": record.level().to_string(),
+                            "target": record.target(),
+                            "message": message,
+                        }),
+                    )
+                    .map_err(std::io::Error::other)?;
+
+                    writeln!(buf)
+                }
+            }
+        });
+
+    builder.try_init().map_err(|err| err.to_string())
+}
+
+impl Default for Logging {
+    fn default() -> Self {
+        Logging {
+            level: LogLevel::default(),
+            format: LogFormat::default(),
+            time_offset: LogTimeOffset::default(),
+            init_fn: default_logger_init,
+        }
+    }
+}
+
 /// Tracing configs
 #[cfg(feature = "tracing")]
 #[derive(Debug, Clone)]
@@ -563,30 +674,33 @@ pub struct Tracing {
     /// RUST_LOG is listened, then smallest wins.
     ///
     /// Default is `info`
-    pub level: TracingLevel,
+    pub level: LogLevel,
 
     /// Tracing logs format:
     ///
     /// - `default`: normal one-line log format. (default)
     /// - `pretty`: pretty multi-line log format.
     /// - `json`: json format
-    pub format: TracingFormat,
+    pub format: LogFormat,
 
     /// Trace logs timestamp offset.
     ///
     /// Time format is RFC 3339.
     ///
     /// Defaults to `utc`.
-    pub time_offset: TracingTimeOffset,
+    pub time_offset: LogTimeOffset,
+
+    pub trace_log: bool,
 }
 
 #[cfg(feature = "tracing")]
 impl Default for Tracing {
     fn default() -> Self {
         Tracing {
-            level: TracingLevel::default(),
-            format: TracingFormat::default(),
-            time_offset: TracingTimeOffset::default(),
+            level: LogLevel::default(),
+            format: LogFormat::default(),
+            time_offset: LogTimeOffset::default(),
+            trace_log: true,
         }
     }
 }
@@ -595,14 +709,16 @@ impl Default for Tracing {
 impl Tracing {
     pub fn init(&self) -> Result<(), String> {
         use crate::tracing;
-        use crate::tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt};
+        use crate::tracing_subscriber::{self, layer::SubscriberExt};
+
+        println!("Initializing tracing...");
 
         let level = match self.level {
-            TracingLevel::Error => tracing::Level::ERROR,
-            TracingLevel::Warn => tracing::Level::WARN,
-            TracingLevel::Info => tracing::Level::INFO,
-            TracingLevel::Debug => tracing::Level::DEBUG,
-            TracingLevel::Trace => tracing::Level::TRACE,
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Warn => tracing::Level::WARN,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Trace => tracing::Level::TRACE,
         };
 
         let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
@@ -638,60 +754,71 @@ impl Tracing {
             .with_timer(local_timer)
             .json();
 
-        match (self.time_offset, self.format) {
-            (TracingTimeOffset::UTC, TracingFormat::Default) => {
-                tracing_subscriber::Registry::default()
+        let _ = match (self.time_offset, self.format) {
+            (LogTimeOffset::UTC, LogFormat::Default) => {
+                let subscriber = tracing_subscriber::Registry::default()
                     .with(env_filter)
-                    .with(fmt_layer_utc_default)
-                    .try_init()
-                    .map_err(|err| err.to_string())
+                    .with(fmt_layer_utc_default);
+
+                tracing::subscriber::set_global_default(subscriber)
+                    .map_err(|err| err.to_string())?
             }
-            (TracingTimeOffset::UTC, TracingFormat::Pretty) => {
-                tracing_subscriber::Registry::default()
+            (LogTimeOffset::UTC, LogFormat::Pretty) => {
+                let subscriber = tracing_subscriber::Registry::default()
                     .with(env_filter)
-                    .with(fmt_layer_utc_pretty)
-                    .try_init()
-                    .map_err(|err| err.to_string())
+                    .with(fmt_layer_utc_pretty);
+
+                tracing::subscriber::set_global_default(subscriber)
+                    .map_err(|err| err.to_string())?
             }
-            (TracingTimeOffset::UTC, TracingFormat::Json) => {
-                tracing_subscriber::Registry::default()
+            (LogTimeOffset::UTC, LogFormat::Json) => {
+                let subscriber = tracing_subscriber::Registry::default()
                     .with(env_filter)
-                    .with(fmt_layer_utc_json)
-                    .try_init()
-                    .map_err(|err| err.to_string())
+                    .with(fmt_layer_utc_json);
+
+                tracing::subscriber::set_global_default(subscriber)
+                    .map_err(|err| err.to_string())?
             }
 
-            (TracingTimeOffset::Local, TracingFormat::Default) => {
-                tracing_subscriber::Registry::default()
+            (LogTimeOffset::Local, LogFormat::Default) => {
+                let subscriber = tracing_subscriber::Registry::default()
                     .with(env_filter)
-                    .with(fmt_layer_local_default)
-                    .try_init()
-                    .map_err(|err| err.to_string())
+                    .with(fmt_layer_local_default);
+
+                tracing::subscriber::set_global_default(subscriber)
+                    .map_err(|err| err.to_string())?
             }
-            (TracingTimeOffset::Local, TracingFormat::Pretty) => {
-                tracing_subscriber::Registry::default()
+            (LogTimeOffset::Local, LogFormat::Pretty) => {
+                let subscriber = tracing_subscriber::Registry::default()
                     .with(env_filter)
-                    .with(fmt_layer_local_pretty)
-                    .try_init()
-                    .map_err(|err| err.to_string())
+                    .with(fmt_layer_local_pretty);
+
+                tracing::subscriber::set_global_default(subscriber)
+                    .map_err(|err| err.to_string())?
             }
-            (TracingTimeOffset::Local, TracingFormat::Json) => {
-                tracing_subscriber::Registry::default()
+            (LogTimeOffset::Local, LogFormat::Json) => {
+                let subscriber = tracing_subscriber::Registry::default()
                     .with(env_filter)
-                    .with(fmt_layer_local_json)
-                    .try_init()
-                    .map_err(|err| err.to_string())
+                    .with(fmt_layer_local_json);
+
+                tracing::subscriber::set_global_default(subscriber)
+                    .map_err(|err| err.to_string())?
             }
+        };
+
+        if self.trace_log {
+            crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
         }
+
+        Ok(())
     }
 }
 
 /// Tracing levels
 ///
 /// The order from top to bottom is from less verbose to most verbose.
-#[cfg(feature = "tracing")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TracingLevel {
+pub enum LogLevel {
     Error,
     Warn,
     #[default]
@@ -700,18 +827,29 @@ pub enum TracingLevel {
     Trace,
 }
 
-#[cfg(feature = "tracing")]
+impl From<LogLevel> for log::LevelFilter {
+    #[inline]
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Error => Self::Error,
+            LogLevel::Warn => Self::Warn,
+            LogLevel::Info => Self::Info,
+            LogLevel::Debug => Self::Debug,
+            LogLevel::Trace => Self::Trace,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TracingFormat {
+pub enum LogFormat {
     #[default]
     Default,
     Pretty,
     Json,
 }
 
-#[cfg(feature = "tracing")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TracingTimeOffset {
+pub enum LogTimeOffset {
     #[default]
     UTC,
     Local,

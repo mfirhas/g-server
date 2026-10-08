@@ -329,14 +329,72 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     }) {
         let tracing_config = &config.value;
         quote! {
-            match (#tracing_config).init() {
-                Ok(()) => {},
-                Err(err) => panic!("g-server: failed initializing tracing: {}", err),
+            #[cfg(feature = "tracing")]
+            {
+                match (#tracing_config).init() {
+                    Ok(()) => {},
+                    Err(err) => panic!("g-server: failed initializing tracing: {}", err),
+                }
             }
         }
     } else {
         quote! {}
     };
+
+    let logging_init = servers
+        .iter()
+        .find_map(|server| {
+            server
+                .body
+                .config
+                .iter()
+                .find(|config| config.name == crate::config::CONFIG_FIELD_LOGGING)
+        })
+        .map(|logging_config| {
+            let logging_config = &logging_config.value;
+
+            let trace_log = servers.iter().find_map(|server| {
+                server
+                    .body
+                    .config
+                    .iter()
+                    .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
+            });
+
+            match trace_log {
+                Some(tracing_config) => {
+                    let trace_log = &tracing_config.value;
+
+                    quote! {
+                        if !(#trace_log).trace_log {
+                            match (#logging_config).init() {
+                                Ok(()) => {},
+                                Err(err) => {
+                                    panic!(
+                                        "g-server: failed initializing logging(outside tracing): {}",
+                                        err
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                None => {
+                    quote! {
+                        match (#logging_config).init() {
+                            Ok(()) => {},
+                            Err(err) => {
+                                panic!(
+                                    "g-server: failed initializing logging: {}",
+                                    err
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        })
+        .unwrap_or_else(|| quote! {});
 
     quote! {
         #[g_server::tokio::main(crate = "g_server::tokio")]
@@ -345,6 +403,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
             #(#listeners)*
 
+            #logging_init
             #tracing_init
 
             #grace_shutdown_canc_token
