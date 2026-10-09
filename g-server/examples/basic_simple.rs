@@ -153,6 +153,7 @@ gserver! {
             tracing: {
                 format: pretty
                 level: info
+                target: stdout,
                 trace_log: false
             }
             request_id: {

@@ -718,6 +718,8 @@ pub struct Tracing {
     /// Defaults to `utc`.
     pub time_offset: LogTimeOffset,
 
+    pub target: LogOutput,
+
     pub trace_log: bool,
 }
 
@@ -727,6 +729,7 @@ impl Default for Tracing {
             level: LogLevel::default(),
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
+            target: LogOutput::default(),
             trace_log: true,
         }
     }
@@ -736,8 +739,44 @@ impl Tracing {
     pub fn init(&self) -> Result<(), String> {
         use crate::tracing;
         use crate::tracing_subscriber::{self, layer::SubscriberExt};
+        use std::io::IsTerminal;
 
         println!("g-server: initializing tracing...");
+
+        let make_writer = |target: &LogOutput| -> Result<
+            crate::tracing_subscriber::fmt::writer::BoxMakeWriter,
+            String,
+        > {
+            match target {
+                LogOutput::StdOut => Ok(
+                    crate::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stdout),
+                ),
+                LogOutput::StdErr => Ok(
+                    crate::tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr),
+                ),
+                LogOutput::File(path) => {
+                    let file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .map_err(|err| err.to_string())?;
+
+                    Ok(crate::tracing_subscriber::fmt::writer::BoxMakeWriter::new(
+                        move || file.try_clone().expect("failed to clone tracing log file"),
+                    ))
+                }
+            }
+        };
+
+        let make_ansi = |params: &Tracing| {
+            let target = match &params.target {
+                LogOutput::StdOut => std::io::stdout().is_terminal(),
+                LogOutput::StdErr => std::io::stderr().is_terminal(),
+                LogOutput::File(_) => false,
+            };
+
+            target && !matches!(params.format, LogFormat::Json)
+        };
 
         let level = match self.level {
             LogLevel::Error => tracing::Level::ERROR,
@@ -757,25 +796,37 @@ impl Tracing {
         let local_timer = tracing_subscriber::fmt::time::ChronoLocal::rfc_3339();
 
         let fmt_layer_utc_default = tracing_subscriber::fmt::layer()
+            .with_writer(make_writer(&self.target)?)
+            .with_ansi(make_ansi(self))
             .with_span_events(span_events.clone())
             .with_timer(utc_timer.clone());
         let fmt_layer_utc_pretty = tracing_subscriber::fmt::layer()
+            .with_writer(make_writer(&self.target)?)
+            .with_ansi(make_ansi(self))
             .with_span_events(span_events.clone())
             .with_timer(utc_timer.clone())
             .pretty();
         let fmt_layer_utc_json = tracing_subscriber::fmt::layer()
+            .with_writer(make_writer(&self.target)?)
+            .with_ansi(make_ansi(self))
             .with_span_events(span_events.clone())
             .with_timer(utc_timer)
             .json();
 
         let fmt_layer_local_default = tracing_subscriber::fmt::layer()
+            .with_writer(make_writer(&self.target)?)
+            .with_ansi(make_ansi(self))
             .with_span_events(span_events.clone())
             .with_timer(local_timer.clone());
         let fmt_layer_local_pretty = tracing_subscriber::fmt::layer()
+            .with_writer(make_writer(&self.target)?)
+            .with_ansi(make_ansi(self))
             .with_span_events(span_events.clone())
             .with_timer(local_timer.clone())
             .pretty();
         let fmt_layer_local_json = tracing_subscriber::fmt::layer()
+            .with_writer(make_writer(&self.target)?)
+            .with_ansi(make_ansi(self))
             .with_span_events(span_events)
             .with_timer(local_timer)
             .json();
