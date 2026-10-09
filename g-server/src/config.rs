@@ -573,7 +573,7 @@ pub struct Logging {
 
 impl Logging {
     pub fn init(self) -> Result<(), String> {
-        println!("Initializing logging...");
+        println!("g-server: initializing logging...");
         (self.init_fn)(self.into())
     }
 }
@@ -662,7 +662,6 @@ impl Default for Logging {
 }
 
 /// Tracing configs
-#[cfg(feature = "tracing")]
 #[derive(Debug, Clone)]
 pub struct Tracing {
     /// Setup maximum tracing level: error -> warn -> info -> debug, -> trace,
@@ -693,7 +692,6 @@ pub struct Tracing {
     pub trace_log: bool,
 }
 
-#[cfg(feature = "tracing")]
 impl Default for Tracing {
     fn default() -> Self {
         Tracing {
@@ -705,13 +703,13 @@ impl Default for Tracing {
     }
 }
 
-#[cfg(feature = "tracing")]
 impl Tracing {
+    #[cfg(feature = "tracing")]
     pub fn init(&self) -> Result<(), String> {
         use crate::tracing;
         use crate::tracing_subscriber::{self, layer::SubscriberExt};
 
-        println!("Initializing tracing...");
+        println!("g-server: initializing tracing...");
 
         let level = match self.level {
             LogLevel::Error => tracing::Level::ERROR,

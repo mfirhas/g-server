@@ -320,27 +320,6 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         }
     });
 
-    let tracing_init = if let Some(config) = servers.iter().find_map(|server| {
-        server
-            .body
-            .config
-            .iter()
-            .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
-    }) {
-        let tracing_config = &config.value;
-        quote! {
-            #[cfg(feature = "tracing")]
-            {
-                match (#tracing_config).init() {
-                    Ok(()) => {},
-                    Err(err) => panic!("g-server: failed initializing tracing: {}", err),
-                }
-            }
-        }
-    } else {
-        quote! {}
-    };
-
     let logging_init = servers
         .iter()
         .find_map(|server| {
@@ -395,6 +374,27 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             }
         })
         .unwrap_or_else(|| quote! {});
+
+    let tracing_init = if let Some(config) = servers.iter().find_map(|server| {
+        server
+            .body
+            .config
+            .iter()
+            .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
+    }) {
+        let tracing_config = &config.value;
+        quote! {
+            #[cfg(feature = "tracing")]
+            {
+                match (#tracing_config).init() {
+                    Ok(()) => {},
+                    Err(err) => panic!("g-server: failed initializing tracing: {}", err),
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     quote! {
         #[g_server::tokio::main(crate = "g_server::tokio")]
