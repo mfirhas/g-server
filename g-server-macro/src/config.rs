@@ -723,6 +723,7 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let mut format: Option<Expr> = None;
     let mut time_offset: Option<Expr> = None;
     let mut init: Option<syn::Path> = None;
+    let mut target: Option<syn::Expr> = None;
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -783,6 +784,41 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                 }
             }
 
+            "target" => {
+                let target_ident: Ident = content.parse()?;
+                match target_ident.to_string().as_str() {
+                    "stdout" => {
+                        target = Some(syn::parse_quote!(g_server::config::LogOutput::StdOut))
+                    }
+                    "stderr" => {
+                        target = Some(syn::parse_quote!(g_server::config::LogOutput::StdErr))
+                    }
+                    "file" => {
+                        let path_content;
+                        syn::parenthesized!(path_content in content);
+
+                        // Any expression evaluating to a string: literal, const, concat!(..), env!(..)
+                        let path: syn::Expr = path_content.parse()?;
+
+                        if !path_content.is_empty() {
+                            return Err(
+                                path_content.error("`file(..)` takes exactly one path expression")
+                            );
+                        }
+
+                        target = Some(syn::parse_quote!(
+                            g_server::config::LogOutput::File(std::path::PathBuf::from(#path))
+                        ))
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            target_ident.span(),
+                            "invalid target, expected: stdout, stderr, or file(..)",
+                        ));
+                    }
+                }
+            }
+
             "init" => {
                 let init_path: syn::Path = content.parse()?;
                 init = Some(init_path)
@@ -802,6 +838,7 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let format = format.unwrap_or(syn::parse_quote!(g_server::config::LogFormat::default()));
     let time_offset =
         time_offset.unwrap_or(syn::parse_quote!(g_server::config::LogTimeOffset::default()));
+    let target = target.unwrap_or(syn::parse_quote!(g_server::config::LogOutput::default()));
     let init_fn = init.unwrap_or(syn::parse_quote!(g_server::config::default_logger_init));
 
     Ok(syn::parse_quote! {
@@ -809,6 +846,7 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             level: #level,
             format: #format,
             time_offset: #time_offset,
+            target: #target,
             init_fn: #init_fn,
         }
     })

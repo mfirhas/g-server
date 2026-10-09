@@ -147,7 +147,8 @@ gserver! {
         app_context: Context,
         config: {
             logging: {
-                format: pretty,
+                format: json,
+                target: stderr,
             }
             tracing: {
                 format: pretty

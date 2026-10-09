@@ -566,6 +566,8 @@ pub struct Logging {
     pub format: LogFormat,
     /// Timestamp offset: utc(0) or local
     pub time_offset: LogTimeOffset,
+    /// Set logs target: stdout, stderr, or directly to file
+    pub target: LogOutput,
 
     /// `init()` function to initializes the logger
     pub init_fn: fn(LoggerInitParams) -> Result<(), String>,
@@ -596,6 +598,8 @@ pub struct LoggerInitParams {
     pub format: LogFormat,
     /// Timestamp offset: utc(0) or local
     pub time_offset: LogTimeOffset,
+    /// Set logs target: stdout, stderr, or directly to file
+    pub target: LogOutput,
 }
 
 impl From<Logging> for LoggerInitParams {
@@ -605,17 +609,33 @@ impl From<Logging> for LoggerInitParams {
             level: value.level,
             format: value.format,
             time_offset: value.time_offset,
+            target: value.target,
         }
     }
 }
 
 pub fn default_logger_init(params: LoggerInitParams) -> Result<(), String> {
+    use crate::env_logger::Target;
     use std::io::Write;
+
+    let target = match &params.target {
+        LogOutput::StdOut => Target::Stdout,
+        LogOutput::StdErr => Target::Stderr,
+        LogOutput::File(path) => {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .map_err(|err| format!("failed to open log file {}: {err}", path.display()))?;
+            Target::Pipe(Box::new(file))
+        }
+    };
 
     let mut builder = crate::env_logger::Builder::new();
 
     builder
         .filter_level(params.level.into())
+        .target(target)
         .format(move |buf, record| {
             let timestamp = match params.time_offset {
                 LogTimeOffset::UTC => chrono::Utc::now().to_rfc3339(),
@@ -664,6 +684,7 @@ impl Default for Logging {
             level: LogLevel::default(),
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
+            target: LogOutput::default(),
             init_fn: default_logger_init,
         }
     }
@@ -858,4 +879,12 @@ pub enum LogTimeOffset {
     #[default]
     UTC,
     Local,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum LogOutput {
+    #[default]
+    StdOut,
+    StdErr,
+    File(std::path::PathBuf),
 }
