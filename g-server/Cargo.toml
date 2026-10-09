@@ -29,7 +29,6 @@ all-features = true
 ratelimit = ["dep:tower_governor", "g-server-macro/ratelimit"]
 embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
 tls = ["dep:axum-server", "dep:rustls", "dep:rustls-pemfile", "g-server-macro/tls"]
-tracing = ["dep:tracing", "dep:tracing-subscriber", "g-server-macro/tracing"]
 
 [dependencies]
 g-server-macro = { path = "../g-server-macro" }
@@ -45,8 +44,11 @@ serde_json = "1"
 serde_urlencoded = "0.7"
 uuid = { version = "1.27", features = ["fast-rng", "v4", "v7"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-log = "0.4"
+log = { version = "0.4", features = ["kv"] }
 env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono", "json"] }
+tracing-log = "0.2"
 
 tower_governor = { version = "0.8", optional = true }
 rust-embed = { version = "8", optional = true }
@@ -54,9 +56,6 @@ mime_guess = { version = "2", optional = true }
 axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
 rustls = { version = "0.23", optional = true }
 rustls-pemfile = { version = "2", optional = true }
-tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono", "json"], optional = true }
-tracing-log = { version = "0.2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }

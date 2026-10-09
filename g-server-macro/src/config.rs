@@ -88,12 +88,6 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
         } else if name.to_string() == CONFIG_FIELD_LOGGING {
             parse_logging(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_TRACING {
-            if !cfg!(feature = "tracing") {
-                return Err(syn::Error::new(
-                    name.span(),
-                    "`tracing` requires feature `tracing`",
-                ));
-            }
             parse_tracing(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
             if !cfg!(feature = "ratelimit") {

@@ -32,7 +32,6 @@ all-features = true
 ratelimit = []
 embed = []
 tls = []
-tracing = []
 
 [dependencies]
 proc-macro2 = "1"

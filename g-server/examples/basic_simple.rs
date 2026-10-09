@@ -146,13 +146,13 @@ gserver! {
     http("with_handler", "0.0.0.0", 42069) {
         app_context: Context,
         config: {
-            // logging: {
-            //     format: json,
-            // }
+            logging: {
+                format: pretty,
+            }
             tracing: {
                 format: pretty
                 level: info
-                trace_log: true
+                trace_log: false
             }
             request_id: {
                 header: HDR,

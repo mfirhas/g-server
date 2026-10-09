@@ -572,8 +572,16 @@ pub struct Logging {
 }
 
 impl Logging {
-    pub fn init(self) -> Result<(), String> {
+    pub fn init(self, trace_config: &Option<Tracing>) -> Result<(), String> {
         println!("g-server: initializing logging...");
+
+        if trace_config.is_none() {
+            crate::tracing::subscriber::set_global_default(
+                crate::tracing::subscriber::NoSubscriber::default(),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         (self.init_fn)(self.into())
     }
 }
@@ -604,7 +612,7 @@ impl From<Logging> for LoggerInitParams {
 pub fn default_logger_init(params: LoggerInitParams) -> Result<(), String> {
     use std::io::Write;
 
-    let mut builder = env_logger::Builder::new();
+    let mut builder = crate::env_logger::Builder::new();
 
     builder
         .filter_level(params.level.into())
@@ -704,7 +712,6 @@ impl Default for Tracing {
 }
 
 impl Tracing {
-    #[cfg(feature = "tracing")]
     pub fn init(&self) -> Result<(), String> {
         use crate::tracing;
         use crate::tracing_subscriber::{self, layer::SubscriberExt};

@@ -5,7 +5,6 @@ pub use ::g_server_macro::gserver;
 // re-exports since it's in generated code.
 pub use ::axum;
 pub use ::http;
-pub use ::log;
 pub use ::serde_urlencoded;
 pub use ::tokio;
 pub use ::tokio_util;
@@ -28,11 +27,10 @@ pub use ::rustls;
 #[cfg(feature = "tls")]
 pub use ::rustls_pemfile;
 
-#[cfg(feature = "tracing")]
+pub use ::env_logger;
+pub use ::log;
 pub use ::tracing;
-#[cfg(feature = "tracing")]
 pub use ::tracing_log;
-#[cfg(feature = "tracing")]
 pub use ::tracing_subscriber;
 
 pub type StatusCode = ::http::StatusCode;

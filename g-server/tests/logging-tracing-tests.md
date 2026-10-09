@@ -3,7 +3,7 @@
 | Logging | Tracing         | Result | Desc.                             |
 | ------- | --------------- | ------ | --------------------------------- |
 | off     | off             | ✅     | both print nothing                |
-| ON      | off             | ❌     | tracing logged(it should not)     |
+| ON      | off             | ✅     | tracing not logged                |
 | off     | ON(NO TRACE LOG)| ✅     | log not printed                   |
 | off     | ON(TRACE LOG)   | ✅     | log printed following trace format|
 | ON      | ON(NO TRACE LOG)| ✅     | each printed in their own format  |

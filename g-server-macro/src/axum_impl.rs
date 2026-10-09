@@ -346,7 +346,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
                     quote! {
                         if !(#trace_log).trace_log {
-                            match (#logging_config).init() {
+                            match (#logging_config).init(&Some(#trace_log)) {
                                 Ok(()) => {},
                                 Err(err) => {
                                     panic!(
@@ -360,7 +360,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                 }
                 None => {
                     quote! {
-                        match (#logging_config).init() {
+                        match (#logging_config).init(&None) {
                             Ok(()) => {},
                             Err(err) => {
                                 panic!(
@@ -384,7 +384,6 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     }) {
         let tracing_config = &config.value;
         quote! {
-            #[cfg(feature = "tracing")]
             {
                 match (#tracing_config).init() {
                     Ok(()) => {},
@@ -452,24 +451,21 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 });
             }
 
-            #[cfg(feature = "tracing")]
-            {
-                if let Some(_) = global_config.tracing {
-                    if let Some(ref req_id) = global_config.request_id {
-                        router = router.layer(
-                            g_server::axum::middleware::from_fn_with_state(
-                                Some(req_id.header.clone()),
-                                tracing_middleware,
-                            )
+            if let Some(_) = global_config.tracing {
+                if let Some(ref req_id) = global_config.request_id {
+                    router = router.layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            Some(req_id.header.clone()),
+                            tracing_middleware,
                         )
-                    } else {
-                        router = router.layer(
-                            g_server::axum::middleware::from_fn_with_state(
-                                None,
-                                tracing_middleware,
-                            )
+                    )
+                } else {
+                    router = router.layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            None,
+                            tracing_middleware,
                         )
-                    }
+                    )
                 }
             }
 
@@ -596,24 +592,21 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 });
             }
 
-            #[cfg(feature = "tracing")]
-            {
-                if let Some(_) = config.tracing {
-                    if let Some(ref req_id) = config.request_id {
-                        router = router.route_layer(
-                            g_server::axum::middleware::from_fn_with_state(
-                                Some(req_id.header.clone()),
-                                tracing_middleware,
-                            )
+            if let Some(_) = config.tracing {
+                if let Some(ref req_id) = config.request_id {
+                    router = router.route_layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            Some(req_id.header.clone()),
+                            tracing_middleware,
                         )
-                    } else {
-                        router = router.route_layer(
-                            g_server::axum::middleware::from_fn_with_state(
-                                None,
-                                tracing_middleware,
-                            )
+                    )
+                } else {
+                    router = router.route_layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            None,
+                            tracing_middleware,
                         )
-                    }
+                    )
                 }
             }
 
@@ -796,7 +789,6 @@ fn request_id_header_middleware() -> TokenStream2 {
 
 fn tracing_middleware() -> TokenStream2 {
     quote! {
-        #[cfg(feature = "tracing")]
         pub(crate) async fn tracing_middleware(
             g_server::axum::extract::State(req_id_header): g_server::axum::extract::State<
                 Option<g_server::http::HeaderName>,
