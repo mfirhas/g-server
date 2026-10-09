@@ -730,7 +730,7 @@ impl Default for Tracing {
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
             target: LogOutput::default(),
-            trace_log: true,
+            trace_log: false,
         }
     }
 }

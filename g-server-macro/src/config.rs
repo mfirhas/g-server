@@ -148,7 +148,7 @@ fn parse_request_id(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                 } else {
                     return Err(syn::Error::new(
                         key_ident.span(),
-                        "invalid `id` type: supported `uuid_v4`, `uuid_v7`, `custom(fn() -> String)`",
+                        "invalid `id` type: supported `uuid_v4`, `uuid_v7`, `fn() -> Result<crate::http::HeaderValue, String>`",
                     ));
                 }
             }
@@ -976,7 +976,7 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let time_offset =
         time_offset.unwrap_or(syn::parse_quote!(g_server::config::LogTimeOffset::default()));
     let target = target.unwrap_or(syn::parse_quote!(g_server::config::LogOutput::default()));
-    let trace_log = trace_log.unwrap_or(syn::parse_quote!(true));
+    let trace_log = trace_log.unwrap_or(syn::parse_quote!(false));
 
     Ok(syn::parse_quote! {
         g_server::config::Tracing {
