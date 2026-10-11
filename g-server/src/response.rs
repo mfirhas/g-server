@@ -4,6 +4,15 @@ use crate::http::{HeaderMap, StatusCode};
 
 pub type Result<T, E> = std::result::Result<Response<T>, Response<E>>;
 
+const HEADER_CONTENT_TYPE_TEXT_PLAIN: crate::http::HeaderValue =
+    crate::http::HeaderValue::from_static("text/plain; charset=utf-8");
+
+const HEADER_CONTENT_TYPE_TEXT_HTML: crate::http::HeaderValue =
+    crate::http::HeaderValue::from_static("text/html; charset=utf-8");
+
+const HEADER_CONTENT_TYPE_APP_JSON: crate::http::HeaderValue =
+    crate::http::HeaderValue::from_static("application/json");
+
 #[derive(Debug, Clone)]
 pub struct Response<Body = ()> {
     pub status: StatusCode,
@@ -30,14 +39,10 @@ impl Response {
         self
     }
 
-    pub fn with_text<S>(mut self, body: S) -> Response<S>
+    pub fn with_text<S>(self, body: S) -> Response<S>
     where
         S: Display,
     {
-        self.headers.insert(
-            crate::http::header::CONTENT_TYPE,
-            crate::http::HeaderValue::from_static("text/plain; charset=utf-8"),
-        );
         Response {
             status: self.status,
             headers: self.headers,
@@ -45,14 +50,10 @@ impl Response {
         }
     }
 
-    pub fn with_html<S>(mut self, body: S) -> Response<S>
+    pub fn with_html<S>(self, body: S) -> Response<S>
     where
         S: Display,
     {
-        self.headers.insert(
-            crate::http::header::CONTENT_TYPE,
-            crate::http::HeaderValue::from_static("text/html; charset=utf-8"),
-        );
         Response {
             status: self.status,
             headers: self.headers,
@@ -60,14 +61,10 @@ impl Response {
         }
     }
 
-    pub fn with_json<Json>(mut self, body: Json) -> Response<Json>
+    pub fn with_json<Json>(self, body: Json) -> Response<Json>
     where
         Json: ::serde::Serialize,
     {
-        self.headers.insert(
-            crate::http::header::CONTENT_TYPE,
-            crate::http::HeaderValue::from_static("application/json"),
-        );
         Response {
             status: self.status,
             headers: self.headers,
@@ -84,7 +81,7 @@ impl<T> Response<T> {
 
         *resp.status_mut() = self.status;
 
-        *resp.headers_mut() = self.headers;
+        resp.headers_mut().extend(self.headers);
 
         resp
     }
@@ -99,12 +96,11 @@ where
 
         *resp.status_mut() = self.status;
 
-        *resp.headers_mut() = self.headers;
+        resp.headers_mut().extend(self.headers);
 
-        resp.headers_mut().insert(
-            crate::http::header::CONTENT_TYPE,
-            crate::http::HeaderValue::from_static("text/plain; charset=utf-8"),
-        );
+        resp.headers_mut()
+            .entry(crate::http::header::CONTENT_TYPE)
+            .or_insert(HEADER_CONTENT_TYPE_TEXT_PLAIN);
 
         resp
     }
@@ -114,12 +110,11 @@ where
 
         *resp.status_mut() = self.status;
 
-        *resp.headers_mut() = self.headers;
+        resp.headers_mut().extend(self.headers);
 
-        resp.headers_mut().insert(
-            crate::http::header::CONTENT_TYPE,
-            crate::http::HeaderValue::from_static("text/html; charset=utf-8"),
-        );
+        resp.headers_mut()
+            .entry(crate::http::header::CONTENT_TYPE)
+            .or_insert(HEADER_CONTENT_TYPE_TEXT_HTML);
 
         resp
     }
@@ -136,10 +131,9 @@ where
 
         *resp.headers_mut() = self.headers;
 
-        resp.headers_mut().insert(
-            crate::http::header::CONTENT_TYPE,
-            crate::http::HeaderValue::from_static("application/json"),
-        );
+        resp.headers_mut()
+            .entry(crate::http::header::CONTENT_TYPE)
+            .or_insert(HEADER_CONTENT_TYPE_APP_JSON);
 
         resp
     }
