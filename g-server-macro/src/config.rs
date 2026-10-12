@@ -728,7 +728,7 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let mut level: Option<Expr> = None;
     let mut format: Option<Expr> = None;
     let mut time_offset: Option<Expr> = None;
-    let mut init: Option<syn::Path> = None;
+    let mut init: Option<Expr> = None;
     let mut target: Option<syn::Expr> = None;
 
     while !content.is_empty() {
@@ -827,7 +827,9 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
 
             "init" => {
                 let init_path: syn::Path = content.parse()?;
-                init = Some(init_path)
+                init = Some(syn::parse_quote! {
+                    |params| std::boxed::Box::pin(#init_path(params))
+                })
             }
 
             _ => {
@@ -845,7 +847,11 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let time_offset =
         time_offset.unwrap_or(syn::parse_quote!(g_server::config::LogTimeOffset::default()));
     let target = target.unwrap_or(syn::parse_quote!(g_server::config::LogOutput::default()));
-    let init_fn = init.unwrap_or(syn::parse_quote!(g_server::config::default_logger_init));
+    let init_fn = init.unwrap_or(syn::parse_quote! {
+        |params| std::boxed::Box::pin(
+            g_server::config::default_logger_init(params)
+        )
+    });
 
     Ok(syn::parse_quote! {
         g_server::config::Logging {

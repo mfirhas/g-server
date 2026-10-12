@@ -614,11 +614,15 @@ pub struct Logging {
     pub target: LogOutput,
 
     /// `init()` function to initializes the logger
-    pub init_fn: fn(LoggerInitParams) -> Result<(), String>,
+    pub init_fn: fn(
+        LoggerInitParams,
+    ) -> std::pin::Pin<
+        std::boxed::Box<dyn std::future::Future<Output = Result<(), String>>>,
+    >,
 }
 
 impl Logging {
-    pub fn init(self, trace_config: &Option<Tracing>) -> Result<(), String> {
+    pub async fn init(self, trace_config: &Option<Tracing>) -> Result<(), String> {
         println!("g-server: initializing logging...");
 
         if trace_config.is_none() {
@@ -628,7 +632,7 @@ impl Logging {
             .map_err(|e| e.to_string())?;
         }
 
-        (self.init_fn)(self.into())
+        (self.init_fn)(self.into()).await
     }
 }
 
@@ -658,7 +662,7 @@ impl From<Logging> for LoggerInitParams {
     }
 }
 
-pub fn default_logger_init(params: LoggerInitParams) -> Result<(), String> {
+pub async fn default_logger_init(params: LoggerInitParams) -> Result<(), String> {
     use crate::env_logger::Target;
     use std::io::Write;
 
@@ -729,7 +733,7 @@ impl Default for Logging {
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
             target: LogOutput::default(),
-            init_fn: default_logger_init,
+            init_fn: |params| std::boxed::Box::pin(default_logger_init(params)),
         }
     }
 }

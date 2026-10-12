@@ -359,7 +359,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
                     quote! {
                         if !(#trace_log).trace_log {
-                            match (#logging_config).init(&Some(#trace_log)) {
+                            match (#logging_config).init(&Some(#trace_log)).await {
                                 Ok(()) => {},
                                 Err(err) => {
                                     panic!(
@@ -373,7 +373,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                 }
                 None => {
                     quote! {
-                        match (#logging_config).init(&None) {
+                        match (#logging_config).init(&None).await {
                             Ok(()) => {},
                             Err(err) => {
                                 panic!(
