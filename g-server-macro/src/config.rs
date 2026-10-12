@@ -8,6 +8,7 @@ pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT: &str = "concurrency_limit";
 pub(crate) const CONFIG_FIELD_BODY_LIMIT: &str = "body_limit";
 pub(crate) const CONFIG_FIELD_COMPRESSION: &str = "compression";
 pub(crate) const CONFIG_FIELD_NORMALIZE_ENDPOINT: &str = "normalize_endpoint";
+pub(crate) const CONFIG_FIELD_PANIC_ERROR: &str = "panic_error";
 pub(crate) const CONFIG_FIELD_TIMEOUT_ERROR: &str = "timeout_error";
 pub(crate) const CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR: &str = "concurrency_limit_error";
 pub(crate) const CONFIG_FIELD_BAD_REQUEST_ERROR: &str = "bad_request_error";
@@ -32,6 +33,7 @@ pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_TLS,
     CONFIG_FIELD_LOGGING,
     CONFIG_FIELD_TRACING,
+    CONFIG_FIELD_PANIC_ERROR,
 ];
 
 pub(crate) static GLOBAL_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
@@ -43,11 +45,15 @@ pub(crate) static FILE_CONFIGS: &[&str] = &[
 ];
 
 pub(crate) static CUSTOM_ERRORS: &[&str] = &[
+    CONFIG_FIELD_PANIC_ERROR,
     CONFIG_FIELD_TIMEOUT_ERROR,
     CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
     CONFIG_FIELD_BAD_REQUEST_ERROR,
     CONFIG_FIELD_FALLBACK_ERROR,
 ];
+
+pub(crate) static CUSTOM_ERRORS_WITH_MESSAGE: &[&str] =
+    &[CONFIG_FIELD_PANIC_ERROR, CONFIG_FIELD_BAD_REQUEST_ERROR];
 
 pub(crate) static ALL_INHERIT_CONFIGS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
@@ -1029,9 +1035,9 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
-                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_json());
+                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).err_msg(err).into_axum_json());
                             }
                         } else {
                             return quote! {
@@ -1046,9 +1052,9 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
-                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_string());
+                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).err_msg(err).into_axum_string());
                             }
                         } else {
                             return quote! {
@@ -1063,9 +1069,9 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
-                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_html());
+                                global_config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).err_msg(err).into_axum_html());
                             }
                         } else {
                             return quote! {
@@ -1074,7 +1080,7 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                         }
                     },
                     _ => {
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
                                 global_config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
                             }
@@ -1087,7 +1093,7 @@ pub(crate) fn generate_global_config(entries: &[ConfigEntry]) -> TokenStream2 {
                 }
             }
 
-            if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+            if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                 return quote! {
                     global_config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
                 }
@@ -1134,9 +1140,9 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
-                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_json());
+                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).err_msg(err).into_axum_json());
                             }
                         } else {
                             return quote! {
@@ -1151,9 +1157,9 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
-                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_string());
+                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).err_msg(err).into_axum_string());
                             }
                         } else {
                             return quote! {
@@ -1168,9 +1174,9 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                             )
                             .as_str(),
                         );
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
-                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).bad_request_err_msg(err).into_axum_html());
+                                config.#field = Some(|err: &str| Into::<Response<_>>::into(#err_resp).err_msg(err).into_axum_html());
                             }
                         } else {
                             return quote! {
@@ -1179,7 +1185,7 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                         }
                     },
                     _ => {
-                        if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+                        if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                             return quote! {
                                 config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
                             }
@@ -1192,7 +1198,7 @@ pub(crate) fn generate_route_config(entries: &[ConfigEntry]) -> TokenStream2 {
                 }
             }
 
-            if field.to_string().as_str() == CONFIG_FIELD_BAD_REQUEST_ERROR {
+            if CUSTOM_ERRORS_WITH_MESSAGE.contains(&field.to_string().as_str()) {
                 return quote! {
                     config.#field = Some(|_: &str| g_server::Response::<()>::from((g_server::StatusCode::INTERNAL_SERVER_ERROR, (), ())).into_axum_empty());
                 }
@@ -1277,7 +1283,8 @@ impl ConfigEntry {
             CONFIG_FIELD_FILE_EMBED => Self::validate_bool(&value),
 
             // custom errors validations
-            CONFIG_FIELD_TIMEOUT_ERROR
+            CONFIG_FIELD_PANIC_ERROR
+            | CONFIG_FIELD_TIMEOUT_ERROR
             | CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR
             | CONFIG_FIELD_BAD_REQUEST_ERROR
             | CONFIG_FIELD_FALLBACK_ERROR => Self::validate_custom_errors(&value),

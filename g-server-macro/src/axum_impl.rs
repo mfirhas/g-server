@@ -64,7 +64,7 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
     Ok(quote! {
         use g_server::axum::response::IntoResponse;
-        use g_server::BadRequestErrorMessage;
+        use g_server::ErrorMessage;
 
         #main
 
@@ -549,6 +549,22 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 );
             }
 
+            if let Some(panic_err) = global_config.panic_error {
+                router = router.layer(g_server::tower_http::catch_panic::CatchPanicLayer::custom(
+                    move |err: Box<dyn std::any::Any + Send + 'static>| {
+                        let msg = if let Some(s) = err.downcast_ref::<String>() {
+                            s.as_str()
+                        } else if let Some(s) = err.downcast_ref::<&str>() {
+                            s
+                        } else {
+                            "g-server: panic!!"
+                        };
+
+                        panic_err(msg)
+                    }
+                ));
+            }
+
             if let Some(normalize_endpoint) = global_config.normalize_endpoint && normalize_endpoint {
                 router = router.layer(
                     g_server::axum::middleware::from_fn(normalize_endpoint_middleware)
@@ -689,6 +705,10 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                     }
                 );
             }
+
+            // panic error can't be registered in route_layer, only for layer in root.
+            // if let Some(panic_err) = config.panic_error {
+            // }
 
             if let Some(normalize_endpoint) = config.normalize_endpoint && normalize_endpoint {
                 router = router.route_layer(

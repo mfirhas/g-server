@@ -44,7 +44,7 @@ mod request;
 pub use request::{Request, multipart};
 
 mod response;
-pub use response::{BadRequestErrorMessage, Response, Result};
+pub use response::{ErrorMessage, Response, Result};
 
 pub mod route;
 pub use route::HttpMethod;

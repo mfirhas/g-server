@@ -106,8 +106,8 @@ fn root_bad_request_error() -> (StatusCode, &'static str) {
 }
 
 struct BadReq(String);
-impl g_server::BadRequestErrorMessage for BadReq {
-    fn bad_request_err_msg(self, err: &str) -> Self {
+impl g_server::ErrorMessage for BadReq {
+    fn err_msg(self, err: &str) -> Self {
         BadReq(format!("{}: {}", self.0, err))
     }
 }
@@ -141,6 +141,10 @@ const FULL: &str = "<h1>full...!!</h1>";
 const PATH: &str = "//this";
 
 static HDR: &str = "x-anu";
+
+async fn panic_route(_: Context, _: Request) -> g_server::Result<(), ()> {
+    panic!("got panic!!")
+}
 
 gserver! {
     http("with_handler", "0.0.0.0", 42069) {
@@ -198,10 +202,16 @@ gserver! {
                 //     "g-server/examples/mtls/allowed_clients/client-ca.pem"
                 // ]
             }
+            panic_error: text((StatusCode::INTERNAL_SERVER_ERROR, BadReq("panic!*@()".into())))
         }
 
         get: {
             endpoint: PATH,
+        }
+
+        get: {
+            endpoint: "/panic"
+            handler: panic_route
         }
 
         get: {

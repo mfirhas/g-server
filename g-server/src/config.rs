@@ -26,6 +26,8 @@ pub struct Config<RLKey = ()> {
     /// TLS config
     pub tls: Option<Tls>,
 
+    /// Panic error
+    pub panic_error: Option<fn(&str) -> ::axum::response::Response>,
     /// Custom timeout error
     pub timeout_error: Option<fn() -> ::axum::response::Response>,
     /// Custom concurrency limit error
@@ -72,6 +74,7 @@ impl Config {
             body_limit: self.body_limit,
             compression: self.compression,
             normalize_endpoint: self.normalize_endpoint,
+            panic_error: self.panic_error,
             timeout_error: self.timeout_error,
             concurrency_limit_error: self.concurrency_limit_error,
             bad_request_error: self.bad_request_error,

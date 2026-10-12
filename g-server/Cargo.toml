@@ -35,7 +35,7 @@ g-server-macro = { path = "../g-server-macro" }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "signal"] }
 tokio-util = "0.7"
 tower = { version = "0.5", features = ["limit", "timeout", "load-shed"] }
-tower-http = { version = "0.7", features = ["compression-full", "cors", "fs"] }
+tower-http = { version = "0.7", features = ["compression-full", "cors", "fs", "catch-panic"] }
 http = "1"
 bytes = "1"
 axum = { version = "0.8.9", features = ["multipart", "http2"] }
