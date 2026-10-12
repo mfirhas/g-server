@@ -220,10 +220,10 @@ fn parse_request_id(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             Ok(syn::parse_quote!(g_server::config::RequestId { id: #id, header: #header }))
         }
         (Some(id), None) => Ok(
-            syn::parse_quote!(g_server::config::RequestId { id: #id, header: g_server::http::HeaderName::from_static("X-Request-Id") }),
+            syn::parse_quote!(g_server::config::RequestId { id: #id, header: g_server::config::DEFAULT_REQUEST_ID_HEADER }),
         ),
         (None, Some(header)) => Ok(
-            syn::parse_quote!(g_server::config::RequestId { id: g_server::config::RequestIdType::UUIDv4, header: #header }),
+            syn::parse_quote!(g_server::config::RequestId { id: g_server::config::RequestIdType::default(), header: #header }),
         ),
         _ => Ok(syn::parse_quote!(g_server::config::RequestId::default())),
     }
@@ -867,6 +867,7 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let mut time_offset: Option<Expr> = None;
     let mut target: Option<syn::Expr> = None;
     let mut trace_log: Option<Expr> = None;
+    let mut correlation_id: Option<Expr> = None;
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -967,6 +968,26 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                 trace_log = Some(trace_log_expr)
             }
 
+            "correlation_id" => {
+                let corr_id_ident: Ident = content.parse()?;
+                correlation_id = Some(match corr_id_ident.to_string().as_str() {
+                    "uuid_v4" => syn::parse_quote!(g_server::config::CorrelationId::default()),
+                    "uuid_v7" => syn::parse_quote!(g_server::config::CorrelationId::new_uuid_v7()),
+                    "custom" => {
+                        let key_content;
+                        syn::parenthesized!(key_content in content);
+                        let func: syn::Path = key_content.parse()?;
+                        syn::parse_quote!(g_server::config::CorrelationId::new_custom(#func))
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            corr_id_ident.span(),
+                            "invalid `id` type: supported `uuid_v4`, `uuid_v7`, `custom(fn() -> Result<crate::http::HeaderValue, String>)`",
+                        ));
+                    }
+                });
+            }
+
             _ => {
                 return Err(syn::Error::new(
                     ident.span(),
@@ -983,6 +1004,8 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
         time_offset.unwrap_or(syn::parse_quote!(g_server::config::LogTimeOffset::default()));
     let target = target.unwrap_or(syn::parse_quote!(g_server::config::LogOutput::default()));
     let trace_log = trace_log.unwrap_or(syn::parse_quote!(false));
+    let correlation_id =
+        correlation_id.unwrap_or(syn::parse_quote!(g_server::config::CorrelationId::default()));
 
     Ok(syn::parse_quote! {
         g_server::config::Tracing {
@@ -991,6 +1014,7 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             time_offset: #time_offset,
             target: #target,
             trace_log: #trace_log,
+            correlation_id: #correlation_id,
         }
     })
 }

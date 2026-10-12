@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::ops::Deref;
 
 /// Server's config
 #[derive(Debug, Default)]
@@ -97,27 +98,31 @@ pub struct RequestId {
     pub header: crate::http::HeaderName,
 }
 
-const DEFAULT_REQUEST_ID_HEADER: &str = "x-request-id";
+pub const CORRELATION_ID_HEADER: crate::http::HeaderName =
+    crate::http::HeaderName::from_static("x-correlation-id");
+pub const DEFAULT_REQUEST_ID_HEADER: crate::http::HeaderName =
+    crate::http::HeaderName::from_static("x-request-id");
 
 impl Default for RequestId {
     #[inline]
     fn default() -> Self {
         Self {
             id: RequestIdType::UUIDv4,
-            header: crate::http::HeaderName::from_static(DEFAULT_REQUEST_ID_HEADER),
+            header: DEFAULT_REQUEST_ID_HEADER,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum RequestIdType {
+    #[default]
     UUIDv4,
     UUIDv7,
     Custom(fn() -> Result<crate::http::HeaderValue, String>),
 }
 
 impl RequestId {
-    pub fn try_new_req_id(&self) -> Result<crate::http::HeaderValue, String> {
+    pub fn try_new_id(&self) -> Result<crate::http::HeaderValue, String> {
         match self.id {
             RequestIdType::UUIDv4 => {
                 crate::http::HeaderValue::from_str(crate::uuid::Uuid::new_v4().to_string().as_str())
@@ -129,6 +134,42 @@ impl RequestId {
             }
             RequestIdType::Custom(val) => val(),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CorrelationId(RequestId);
+
+impl CorrelationId {
+    pub fn new_uuid_v7() -> Self {
+        Self(RequestId {
+            id: RequestIdType::UUIDv7,
+            header: CORRELATION_ID_HEADER,
+        })
+    }
+
+    pub fn new_custom(custom_fn: fn() -> Result<crate::http::HeaderValue, String>) -> Self {
+        Self(RequestId {
+            id: RequestIdType::Custom(custom_fn),
+            header: CORRELATION_ID_HEADER,
+        })
+    }
+}
+
+impl Default for CorrelationId {
+    fn default() -> Self {
+        Self(RequestId {
+            id: RequestIdType::UUIDv4,
+            header: CORRELATION_ID_HEADER,
+        })
+    }
+}
+
+impl Deref for CorrelationId {
+    type Target = RequestId;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -724,6 +765,8 @@ pub struct Tracing {
     pub target: LogOutput,
 
     pub trace_log: bool,
+
+    pub correlation_id: CorrelationId,
 }
 
 impl Default for Tracing {
@@ -734,6 +777,7 @@ impl Default for Tracing {
             time_offset: LogTimeOffset::default(),
             target: LogOutput::default(),
             trace_log: false,
+            correlation_id: CorrelationId::default(),
         }
     }
 }

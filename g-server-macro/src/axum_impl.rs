@@ -39,7 +39,20 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
     // custom middlewares
     let norm_endpoint_mw = normalize_endpoint_middleware();
     let request_id_header_mw = request_id_header_middleware();
-    let tracing_mw = tracing_middleware();
+    let tracing_mw = if let Some(config) = servers.iter().find_map(|server| {
+        server
+            .body
+            .config
+            .iter()
+            .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
+    }) {
+        let tracing_cfg = &config.value;
+        let corr_id_cfg: Expr = syn::parse_quote!((#tracing_cfg).correlation_id);
+        tracing_middleware(&corr_id_cfg)
+    } else {
+        let corr_id_cfg: Expr = syn::parse_quote!(g_server::config::CorrelationId::default());
+        tracing_middleware(&corr_id_cfg)
+    };
 
     let initializers = servers
         .iter()
@@ -780,7 +793,7 @@ fn request_id_header_middleware() -> TokenStream2 {
             let request_id = match request.headers_mut().entry(&req_id.header) {
                 g_server::http::header::Entry::Occupied(entry) => entry.get().clone(),
                 g_server::http::header::Entry::Vacant(entry) => {
-                    let value = match req_id.try_new_req_id() {
+                    let value = match req_id.try_new_id() {
                         Ok(id) => id,
                         Err(err) => {
                             return (
@@ -807,7 +820,7 @@ fn request_id_header_middleware() -> TokenStream2 {
     }
 }
 
-fn tracing_middleware() -> TokenStream2 {
+fn tracing_middleware(corr_id_cfg: &Expr) -> TokenStream2 {
     quote! {
         pub(crate) async fn tracing_middleware(
             g_server::axum::extract::State(req_id_header): g_server::axum::extract::State<
@@ -818,18 +831,26 @@ fn tracing_middleware() -> TokenStream2 {
         ) -> g_server::axum::response::Response {
             use g_server::tracing::Instrument;
 
+            let corr_id_hdr_val = if let Some(corr_id_val) = request.headers().get(&(#corr_id_cfg).header) {
+                corr_id_val
+            } else {
+                &(#corr_id_cfg).try_new_id().unwrap_or(g_server::http::HeaderValue::from_static("<invalid>"))
+            };
+
             let span = if let Some(req_id_header) = req_id_header {
                 match request.headers().get(&req_id_header) {
                     Some(value) => g_server::tracing::info_span!(
                         "request",
                         method = %request.method(),
                         uri = %request.uri(),
+                        correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
                         request_id = %value.to_str().unwrap_or("<invalid>"),
                     ),
                     None => g_server::tracing::info_span!(
                         "request",
                         method = %request.method(),
                         uri = %request.uri(),
+                        correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
                     ),
                 }
             } else {
@@ -837,6 +858,7 @@ fn tracing_middleware() -> TokenStream2 {
                     "request",
                     method = %request.method(),
                     uri = %request.uri(),
+                    correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
                 )
             };
 
