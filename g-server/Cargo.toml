@@ -26,7 +26,6 @@ exclude = [
 all-features = true
 
 [features]
-ratelimit = ["dep:tower_governor", "g-server-macro/ratelimit"]
 embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
 tls = ["dep:axum-server", "dep:rustls", "dep:rustls-pemfile", "g-server-macro/tls"]
 

@@ -257,7 +257,6 @@ pub enum RateLimitKey<Key = ()> {
 }
 
 impl<Key> RateLimit<Key> {
-    #[cfg(feature = "ratelimit")]
     pub fn layer<C>(&self, router: crate::axum::Router<C>) -> crate::axum::Router<C>
     where
         Key: Debug + Eq + PartialEq + Clone + Hash + CustomKey + Send + Sync + 'static,
@@ -342,7 +341,6 @@ impl<Key> RateLimit<Key> {
         }
     }
 
-    #[cfg(feature = "ratelimit")]
     pub fn route_layer<C>(
         &self,
         router: crate::axum::routing::MethodRouter<C>,
@@ -454,7 +452,6 @@ pub struct CustomKeyError {
     pub message: String,
 }
 
-#[cfg(feature = "ratelimit")]
 impl<CKey> crate::tower_governor::key_extractor::KeyExtractor for CustomRateLimitKey<CKey>
 where
     CKey: Debug + Eq + PartialEq + Clone + Hash + CustomKey + Send + Sync + 'static,

@@ -96,12 +96,6 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
         } else if name.to_string() == CONFIG_FIELD_TRACING {
             parse_tracing(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
-            if !cfg!(feature = "ratelimit") {
-                return Err(syn::Error::new(
-                    name.span(),
-                    "`ratelimit` requires feature `ratelimit`",
-                ));
-            }
             parse_rate_limit(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_TLS {
             if !cfg!(feature = "tls") {

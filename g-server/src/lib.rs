@@ -9,6 +9,7 @@ pub use ::serde_urlencoded;
 pub use ::tokio;
 pub use ::tokio_util;
 pub use ::tower;
+pub use ::tower_governor;
 pub use ::tower_http;
 pub use ::uuid;
 
@@ -16,9 +17,6 @@ pub use ::uuid;
 pub use ::mime_guess;
 #[cfg(feature = "embed")]
 pub use ::rust_embed;
-
-#[cfg(feature = "ratelimit")]
-pub use ::tower_governor;
 
 #[cfg(feature = "tls")]
 pub use ::axum_server;
