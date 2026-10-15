@@ -1,3 +1,4 @@
+use crate::axum::response::IntoResponse;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
@@ -134,6 +135,40 @@ impl RequestId {
             }
             RequestIdType::Custom(val) => val(),
         }
+    }
+
+    pub async fn request_id_header_middleware(
+        crate::axum::extract::State(req_id): crate::axum::extract::State<crate::config::RequestId>,
+        mut request: crate::axum::extract::Request,
+        next: crate::axum::middleware::Next,
+    ) -> crate::axum::response::Response {
+        let request_id = match request.headers_mut().entry(&req_id.header) {
+            crate::http::header::Entry::Occupied(entry) => entry.get().clone(),
+            crate::http::header::Entry::Vacant(entry) => {
+                let value = match req_id.try_new_id() {
+                    Ok(id) => id,
+                    Err(err) => {
+                        return (
+                            crate::StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("g-server: failed creating new request id: {}", err),
+                        )
+                            .into_response();
+                    }
+                };
+                entry.insert(value.clone());
+                value
+            }
+        };
+
+        let mut response = next.run(request).await;
+
+        if let crate::http::header::Entry::Vacant(entry) =
+            response.headers_mut().entry(&req_id.header)
+        {
+            entry.insert(request_id);
+        }
+
+        response
     }
 }
 
@@ -936,6 +971,59 @@ impl Tracing {
         }
 
         Ok(())
+    }
+
+    pub async fn tracing_middleware(
+        crate::axum::extract::State((corr_id_cfg, req_id_header)): crate::axum::extract::State<(
+            CorrelationId,
+            Option<crate::http::HeaderName>,
+        )>,
+        request: crate::axum::extract::Request,
+        next: crate::axum::middleware::Next,
+    ) -> crate::axum::response::Response {
+        use crate::tracing::Instrument;
+
+        let corr_id_hdr_val = if let Some(corr_id_val) = request.headers().get(&corr_id_cfg.header)
+        {
+            corr_id_val
+        } else {
+            &corr_id_cfg
+                .try_new_id()
+                .unwrap_or(crate::http::HeaderValue::from_static("<invalid>"))
+        };
+
+        let span = if let Some(req_id_header) = req_id_header {
+            match request.headers().get(&req_id_header) {
+                Some(value) => crate::tracing::info_span!(
+                    "request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
+                    request_id = %value.to_str().unwrap_or("<invalid>"),
+                ),
+                None => crate::tracing::info_span!(
+                    "request",
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
+                ),
+            }
+        } else {
+            crate::tracing::info_span!(
+                "request",
+                method = %request.method(),
+                uri = %request.uri(),
+                correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
+            )
+        };
+
+        crate::tracing::info!("::REQUEST_BEGIN::");
+
+        let resp = next.run(request).instrument(span).await;
+
+        crate::tracing::info!("::REQUEST_END::");
+
+        resp
     }
 }
 

@@ -38,21 +38,6 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
 
     // custom middlewares
     let norm_endpoint_mw = normalize_endpoint_middleware();
-    let request_id_header_mw = request_id_header_middleware();
-    let tracing_mw = if let Some(config) = servers.iter().find_map(|server| {
-        server
-            .body
-            .config
-            .iter()
-            .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
-    }) {
-        let tracing_cfg = &config.value;
-        let corr_id_cfg: Expr = syn::parse_quote!((#tracing_cfg).correlation_id);
-        tracing_middleware(&corr_id_cfg)
-    } else {
-        let corr_id_cfg: Expr = syn::parse_quote!(g_server::config::CorrelationId::default());
-        tracing_middleware(&corr_id_cfg)
-    };
 
     let initializers = servers
         .iter()
@@ -86,8 +71,6 @@ pub(crate) fn expand(input: crate::server::GServer) -> Result<TokenStream2> {
         #route_infra_mw
 
         #norm_endpoint_mw
-        #request_id_header_mw
-        #tracing_mw
 
         #(#initializers)*
 
@@ -464,19 +447,19 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 });
             }
 
-            if let Some(_) = global_config.tracing {
+            if let Some(ref tracing_cfg) = global_config.tracing {
                 if let Some(ref req_id) = global_config.request_id {
                     router = router.layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            Some(req_id.header.clone()),
-                            tracing_middleware,
+                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
+                            g_server::config::Tracing::tracing_middleware,
                         )
                     )
                 } else {
                     router = router.layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            None,
-                            tracing_middleware,
+                            (tracing_cfg.correlation_id.clone(), None),
+                            g_server::config::Tracing::tracing_middleware,
                         )
                     )
                 }
@@ -549,7 +532,7 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                 router = router.layer(
                     g_server::axum::middleware::from_fn_with_state(
                         req_id.clone(),
-                        request_id_header_middleware,
+                        g_server::config::RequestId::request_id_header_middleware
                     )
                 )
             }
@@ -621,19 +604,19 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 });
             }
 
-            if let Some(_) = config.tracing {
+            if let Some(ref tracing_cfg) = config.tracing {
                 if let Some(ref req_id) = config.request_id {
                     router = router.route_layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            Some(req_id.header.clone()),
-                            tracing_middleware,
+                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
+                            g_server::config::Tracing::tracing_middleware,
                         )
                     )
                 } else {
                     router = router.route_layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            None,
-                            tracing_middleware,
+                            (tracing_cfg.correlation_id.clone(), None),
+                            g_server::config::Tracing::tracing_middleware,
                         )
                     )
                 }
@@ -706,7 +689,7 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                 router = router.route_layer(
                     g_server::axum::middleware::from_fn_with_state(
                         req_id.clone(),
-                        request_id_header_middleware,
+                        g_server::config::RequestId::request_id_header_middleware,
                     )
                 )
             }
@@ -777,100 +760,6 @@ fn normalize_endpoint_middleware() -> TokenStream2 {
             }
 
             g_server::axum::response::Redirect::permanent(&normalized).into_response()
-        }
-    }
-}
-
-fn request_id_header_middleware() -> TokenStream2 {
-    quote! {
-        pub(crate) async fn request_id_header_middleware(
-            g_server::axum::extract::State(req_id): g_server::axum::extract::State<
-                g_server::config::RequestId,
-            >,
-            mut request: g_server::axum::extract::Request,
-            next: g_server::axum::middleware::Next,
-        ) -> g_server::axum::response::Response {
-            let request_id = match request.headers_mut().entry(&req_id.header) {
-                g_server::http::header::Entry::Occupied(entry) => entry.get().clone(),
-                g_server::http::header::Entry::Vacant(entry) => {
-                    let value = match req_id.try_new_id() {
-                        Ok(id) => id,
-                        Err(err) => {
-                            return (
-                                g_server::StatusCode::INTERNAL_SERVER_ERROR,
-                                format!("g-server: failed creating new request id: {}", err),
-                            )
-                                .into_response();
-                        }
-                    };
-                    entry.insert(value.clone());
-                    value
-                }
-            };
-
-            let mut response = next.run(request).await;
-
-            if let g_server::http::header::Entry::Vacant(entry) = response.headers_mut().entry(&req_id.header)
-            {
-                entry.insert(request_id);
-            }
-
-            response
-        }
-    }
-}
-
-fn tracing_middleware(corr_id_cfg: &Expr) -> TokenStream2 {
-    quote! {
-        pub(crate) async fn tracing_middleware(
-            g_server::axum::extract::State(req_id_header): g_server::axum::extract::State<
-                Option<g_server::http::HeaderName>,
-            >,
-            request: g_server::axum::extract::Request,
-            next: g_server::axum::middleware::Next,
-        ) -> g_server::axum::response::Response {
-            use g_server::tracing::Instrument;
-
-            let corr_id_hdr_val = if let Some(corr_id_val) = request.headers().get(&(#corr_id_cfg).header) {
-                corr_id_val
-            } else {
-                &(#corr_id_cfg).try_new_id().unwrap_or(g_server::http::HeaderValue::from_static("<invalid>"))
-            };
-
-            let span = if let Some(req_id_header) = req_id_header {
-                match request.headers().get(&req_id_header) {
-                    Some(value) => g_server::tracing::info_span!(
-                        "request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                        correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
-                        request_id = %value.to_str().unwrap_or("<invalid>"),
-                    ),
-                    None => g_server::tracing::info_span!(
-                        "request",
-                        method = %request.method(),
-                        uri = %request.uri(),
-                        correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
-                    ),
-                }
-            } else {
-                g_server::tracing::info_span!(
-                    "request",
-                    method = %request.method(),
-                    uri = %request.uri(),
-                    correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
-                )
-            };
-
-            g_server::tracing::info!("::REQUEST_BEGIN::");
-
-            let resp = next.run(request)
-                .instrument(span)
-                .await;
-
-            g_server::tracing::info!("::REQUEST_END::");
-
-            resp
         }
     }
 }
