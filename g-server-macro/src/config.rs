@@ -566,19 +566,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             "cert" => {
                 let cert_expr = content.parse::<Expr>()?;
                 match &cert_expr {
-                    Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(lit_str),
-                        ..
-                    }) => {
-                        let path_str = lit_str.value();
-                        let path = std::path::Path::new(&path_str);
-                        if !path.is_file() || !path.exists() {
-                            return Err(syn::Error::new(
-                                cert_expr.span(),
-                                "`cert` file doesn't exist",
-                            ));
-                        }
-                    }
+                    Expr::Lit(syn::ExprLit { .. }) => {}
                     Expr::Path(syn::ExprPath { .. }) => {}
                     _ => {
                         return Err(syn::Error::new(
@@ -592,19 +580,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             "key" => {
                 let key_expr = content.parse::<Expr>()?;
                 match &key_expr {
-                    Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(lit_str),
-                        ..
-                    }) => {
-                        let path_str = lit_str.value();
-                        let path = std::path::Path::new(&path_str);
-                        if !path.is_file() || !path.exists() {
-                            return Err(syn::Error::new(
-                                key_expr.span(),
-                                "`key` file doesn't exist",
-                            ));
-                        }
-                    }
+                    Expr::Lit(syn::ExprLit { .. }) => {}
                     Expr::Path(syn::ExprPath { .. }) => {}
                     _ => {
                         return Err(syn::Error::new(
@@ -622,19 +598,7 @@ fn parse_tls(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                 let cas = content.parse::<ExprArray>()?;
                 for ca in cas.elems.iter() {
                     match ca {
-                        Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(lit_str),
-                            ..
-                        }) => {
-                            let path_str = lit_str.value();
-                            let path = std::path::Path::new(&path_str);
-                            if !path.is_file() || !path.exists() {
-                                return Err(syn::Error::new(
-                                    ca.span(),
-                                    format!("\"{}\" file doesn't exist", lit_str.value()),
-                                ));
-                            }
-                        }
+                        Expr::Lit(syn::ExprLit { .. }) => {}
                         Expr::Path(syn::ExprPath { .. }) => {}
                         _ => {
                             return Err(syn::Error::new(
