@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt::Display};
 
-use proc_macro2::Ident;
+use proc_macro2::{Ident, Span};
 use syn::spanned::Spanned;
 use syn::{Expr, LitInt, LitStr, Result, Token, Type, braced, parse::ParseStream};
 
@@ -154,6 +154,7 @@ pub(crate) struct GServer {
 impl GServer {
     pub(crate) fn try_new(servers: Vec<Server>) -> Result<Self> {
         validate_servers(&servers)?;
+        validate_global_config(&servers)?;
         Ok(Self { servers })
     }
 }
@@ -196,7 +197,7 @@ fn validate_servers(servers: &[crate::server::Server]) -> Result<()> {
 
         validate_http_server_configs(server)?;
 
-        validate_global_group_configs(server)?;
+        validate_root_group_configs(server)?;
 
         validate_http_routes(server)?;
 
@@ -215,7 +216,7 @@ fn validate_http_server_configs(server: &crate::server::Server) -> Result<()> {
         let server_body = &server.body;
 
         for route in server_body.routes.iter() {
-            validate_non_global_configs(&route.config)?;
+            validate_non_root_configs(&route.config)?;
         }
 
         for group in server_body.groups.iter() {
@@ -226,11 +227,11 @@ fn validate_http_server_configs(server: &crate::server::Server) -> Result<()> {
 }
 
 fn validate_group_configs(group: &crate::group::Group) -> Result<()> {
-    validate_non_global_configs(&group.config)?;
+    validate_non_root_configs(&group.config)?;
 
     for member in group.members.iter() {
         match member {
-            GroupMember::Route(route) => validate_non_global_configs(&route.config)?,
+            GroupMember::Route(route) => validate_non_root_configs(&route.config)?,
             GroupMember::Group(group) => validate_group_configs(group)?,
         }
     }
@@ -238,13 +239,13 @@ fn validate_group_configs(group: &crate::group::Group) -> Result<()> {
     Ok(())
 }
 
-fn validate_non_global_configs(configs: &[ConfigEntry]) -> Result<()> {
+fn validate_non_root_configs(configs: &[ConfigEntry]) -> Result<()> {
     for cfg in configs {
         let ident_name = cfg.name.to_string();
-        if crate::config::GLOBAL_CONFIGS.contains(&ident_name.as_str()) {
+        if crate::config::ROOT_CONFIGS.contains(&ident_name.as_str()) {
             return Err(syn::Error::new(
                 cfg.name.span(),
-                format!("`{}` only allowed for global config", &ident_name),
+                format!("`{}` only allowed for root config", &ident_name),
             ));
         }
     }
@@ -252,21 +253,21 @@ fn validate_non_global_configs(configs: &[ConfigEntry]) -> Result<()> {
     Ok(())
 }
 
-// validate global and group configs only
-fn validate_global_group_configs(server: &crate::server::Server) -> Result<()> {
-    fn check_global_group_config_group(group: &Group) -> syn::Result<()> {
+// validate root and group configs only
+fn validate_root_group_configs(server: &crate::server::Server) -> Result<()> {
+    fn check_root_group_config_group(group: &Group) -> syn::Result<()> {
         for member in &group.members {
             match member {
-                GroupMember::Route(route) => check_global_group_config_route(route)?,
-                GroupMember::Group(nested) => check_global_group_config_group(nested)?,
+                GroupMember::Route(route) => check_root_group_config_route(route)?,
+                GroupMember::Group(nested) => check_root_group_config_group(nested)?,
             }
         }
         Ok(())
     }
 
-    fn check_global_group_config_route(route: &Route) -> syn::Result<()> {
+    fn check_root_group_config_route(route: &Route) -> syn::Result<()> {
         for entry in &route.config {
-            if crate::config::GLOBAL_GROUP_CONFIGS.contains(&entry.name.to_string().as_str()) {
+            if crate::config::ROOT_GROUP_CONFIGS.contains(&entry.name.to_string().as_str()) {
                 return Err(syn::Error::new(
                     entry.name.span(),
                     format!(
@@ -280,11 +281,34 @@ fn validate_global_group_configs(server: &crate::server::Server) -> Result<()> {
     }
 
     for group in &server.body.groups {
-        check_global_group_config_group(group)?;
+        check_root_group_config_group(group)?;
     }
 
     for route in &server.body.routes {
-        check_global_group_config_route(route)?;
+        check_root_group_config_route(route)?;
+    }
+
+    Ok(())
+}
+
+fn validate_global_config(servers: &[Server]) -> Result<()> {
+    let global_config_count = servers
+        .iter()
+        .filter(|s| {
+            s.body
+                .config
+                .iter()
+                .any(|c| crate::config::GLOBAL_CONFIGS.contains(&c.name.to_string().as_str()))
+        })
+        .count();
+    if global_config_count > 1 {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            format!(
+                "g-server: global configs: {:?}, may only be declared once in root on any servers",
+                &crate::config::GLOBAL_CONFIGS
+            ),
+        ));
     }
 
     Ok(())

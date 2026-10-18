@@ -27,8 +27,15 @@ pub(crate) const CONFIG_FIELD_LOGGING: &str = "logging";
 pub(crate) const CONFIG_FIELD_TRACING: &str = "tracing";
 pub(crate) const CONFIG_FIELD_METRICS: &str = "metrics";
 
-/// Configs that only allowed in server's root.
+/// Configs that only allowed in one of servers and applied to all servers.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
+    CONFIG_FIELD_LOGGING,
+    CONFIG_FIELD_TRACING,
+    CONFIG_FIELD_METRICS,
+];
+
+/// Configs that only allowed in server's root.
+pub(crate) static ROOT_CONFIGS: &[&str] = &[
     CONFIG_FIELD_NORMALIZE_ENDPOINT,
     CONFIG_FIELD_GRACEFUL_SHUTDOWN,
     CONFIG_FIELD_TLS,
@@ -38,8 +45,10 @@ pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_PANIC_ERROR,
 ];
 
-pub(crate) static GLOBAL_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
+/// Configs that only allowed in root and group.
+pub(crate) static ROOT_GROUP_CONFIGS: &[&str] = &[CONFIG_FIELD_FALLBACK_ERROR];
 
+/// Configs that only allowed in file server endpoint.
 pub(crate) static FILE_CONFIGS: &[&str] = &[
     CONFIG_FIELD_FILE_DIR,
     CONFIG_FIELD_FILE_FALLBACK_FILE,
@@ -57,6 +66,7 @@ pub(crate) static CUSTOM_ERRORS: &[&str] = &[
 pub(crate) static CUSTOM_ERRORS_WITH_MESSAGE: &[&str] =
     &[CONFIG_FIELD_PANIC_ERROR, CONFIG_FIELD_BAD_REQUEST_ERROR];
 
+/// Configs that will be inherited if specified in root or group, but not in routes configs.
 pub(crate) static ALL_INHERIT_CONFIGS: &[&str] = &[
     CONFIG_FIELD_TIMEOUT_ERROR,
     CONFIG_FIELD_CONCURRENCY_LIMIT_ERROR,
