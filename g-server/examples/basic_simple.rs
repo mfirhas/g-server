@@ -160,6 +160,11 @@ gserver! {
                 target: stdout,
                 trace_log: false
             }
+            metrics: {
+                system: {
+
+                },
+            }
             request_id: {
                 header: HDR,
                 id: uuid_v7

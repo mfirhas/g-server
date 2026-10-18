@@ -25,6 +25,7 @@ pub(crate) const CONFIG_FIELD_TLS: &str = "tls";
 
 pub(crate) const CONFIG_FIELD_LOGGING: &str = "logging";
 pub(crate) const CONFIG_FIELD_TRACING: &str = "tracing";
+pub(crate) const CONFIG_FIELD_METRICS: &str = "metrics";
 
 /// Configs that only allowed in server's root.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
@@ -33,6 +34,7 @@ pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_TLS,
     CONFIG_FIELD_LOGGING,
     CONFIG_FIELD_TRACING,
+    CONFIG_FIELD_METRICS,
     CONFIG_FIELD_PANIC_ERROR,
 ];
 
@@ -95,6 +97,14 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
             parse_logging(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_TRACING {
             parse_tracing(&name, input)?
+        } else if name.to_string() == CONFIG_FIELD_METRICS {
+            if !cfg!(feature = "metrics") {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "`metrics` requires feature `metrics`",
+                ));
+            }
+            parse_metrics(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
             parse_rate_limit(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_TLS {
@@ -983,6 +993,183 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     })
 }
 
+/*
+metrics: {
+    system: {
+        enable: bool,
+        refresh_duration: 1000,
+        cpu_usage: {
+            enable: bool,
+            name: static str,
+            labels: [(static str, static str)]
+        },
+        memory_usage: {..},
+        memory_avail: {..},
+        disk_usage: {..},
+        disk_avail: {..},
+        network_received: {..},
+        network_sent: {..},
+    }
+}
+
+{..} means same as above
+*/
+fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut system: Option<Expr> = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "system" => system = Some(parse_system_metrics(&ident, &content)?),
+            _ => {
+                return Err(syn::Error::new(ident.span(), "invalid metrics config"));
+            }
+        }
+        crate::consume_comma(&content)?;
+    }
+
+    let system = system.unwrap_or(syn::parse_quote!(g_server::config::SystemMetrics::default()));
+
+    Ok(syn::parse_quote! {
+        g_server::config::Metrics {
+            system_metrics: #system,
+            init_fn: None,
+        }
+    })
+}
+
+fn parse_system_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut updates = Vec::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "enable" => {
+                let value: syn::LitBool = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __system.enable = #value;
+                });
+            }
+            "refresh_duration" => {
+                let value: syn::LitInt = content.parse()?;
+                let millis = value.base10_parse::<u64>()?;
+
+                updates.push(quote::quote! {
+                    __system.refresh_duration =
+                        ::std::time::Duration::from_millis(#millis);
+                });
+            }
+            "cpu_usage" | "memory_usage" | "memory_avail" | "disk_usage" | "disk_avail"
+            | "network_received" | "network_sent" => {
+                updates.extend(parse_metrics_config(&field, &content)?);
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("invalid `{ident}` metrics config"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    Ok(syn::parse_quote! {
+        {
+            let mut __system = g_server::config::SystemMetrics::default();
+
+            #(#updates)*
+
+            __system
+        }
+    })
+}
+
+fn parse_metrics_config(
+    ident: &Ident,
+    input: ParseStream<'_>,
+) -> Result<Vec<proc_macro2::TokenStream>> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut updates = Vec::new();
+    let metric = ident;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "enable" => {
+                let value: syn::LitBool = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __system.#metric.enable = #value;
+                });
+            }
+            "name" => {
+                let value: syn::LitStr = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __system.#metric.name = #value;
+                });
+            }
+            "labels" => {
+                let labels_content;
+                syn::bracketed!(labels_content in content);
+
+                let mut labels = Vec::new();
+
+                while !labels_content.is_empty() {
+                    let pair;
+                    syn::parenthesized!(pair in labels_content);
+
+                    let key: syn::LitStr = pair.parse()?;
+                    pair.parse::<Token![,]>()?;
+                    let value: syn::LitStr = pair.parse()?;
+
+                    if !pair.is_empty() {
+                        return Err(pair.error("expected a label key and value"));
+                    }
+
+                    labels.push((key, value));
+                    crate::consume_comma(&labels_content)?;
+                }
+
+                let labels = labels.iter().map(|(key, value)| {
+                    quote::quote! { (#key, #value) }
+                });
+
+                updates.push(quote::quote! {
+                    __system.#metric.labels = &[#(#labels),*];
+                });
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("invalid `{metric}` metrics config"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    Ok(updates)
+}
+
 /// validate config entries that depend on other config entries.
 // fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
 //     let pairs = [
@@ -1263,6 +1450,7 @@ impl ConfigEntry {
 
             CONFIG_FIELD_LOGGING => Ok(()),
             CONFIG_FIELD_TRACING => Ok(()),
+            CONFIG_FIELD_METRICS => Ok(()),
 
             // file configs validations
             CONFIG_FIELD_FILE_DIR | CONFIG_FIELD_FILE_FALLBACK_FILE => {

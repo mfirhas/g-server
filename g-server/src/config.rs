@@ -25,6 +25,9 @@ pub struct Config<RLKey = ()> {
     /// Tracing config
     pub tracing: Option<Tracing>,
 
+    /// Metrics config
+    pub metrics: Option<Metrics>,
+
     /// TLS config
     pub tls: Option<Tls>,
 
@@ -89,6 +92,7 @@ impl Config {
             graceful_shutdown: self.graceful_shutdown,
             logging: self.logging,
             tracing: self.tracing,
+            metrics: self.metrics,
         }
     }
 }
@@ -1074,4 +1078,201 @@ pub enum LogOutput {
     StdOut,
     StdErr,
     File(std::path::PathBuf),
+}
+
+// Metrics
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    pub system_metrics: SystemMetrics,
+
+    /// `init()` function to initializes the metrics recorder
+    pub init_fn: Option<
+        fn()
+            -> std::pin::Pin<std::boxed::Box<dyn std::future::Future<Output = Result<(), String>>>>,
+    >,
+}
+
+impl Metrics {
+    #[cfg(feature = "metrics")]
+    pub fn init(&self) -> Result<(), String> {
+        println!("g-server: initializing metrics...");
+        self.init_system_metrics()?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn init_system_metrics(&self) -> Result<(), String> {
+        use crate::sysinfo::{Disks, Networks, System};
+
+        let cfg = self.system_metrics.clone();
+        if !cfg.enable {
+            return Ok(());
+        }
+
+        println!("g-server: initializing system metrics...");
+
+        tokio::spawn(async move {
+            let mut sys = System::new();
+            let mut disks = Disks::new_with_refreshed_list();
+            let mut networks = Networks::new_with_refreshed_list();
+
+            // tokio::time::interval panics on a zero period.
+            let period = cfg
+                .refresh_duration
+                .max(std::time::Duration::from_millis(1));
+            let mut ticker = crate::tokio::time::interval(period);
+            ticker.set_missed_tick_behavior(crate::tokio::time::MissedTickBehavior::Skip);
+
+            // CPU usage is a diff between two refreshes, so prime it once;
+            // otherwise the first reading would be inaccurate.
+            sys.refresh_cpu_usage();
+
+            loop {
+                ticker.tick().await;
+
+                // CPU: sysinfo reports percent (0..100), OTel utilization is 0..1.
+                if cfg.cpu_usage.enable {
+                    sys.refresh_cpu_usage();
+                    record(&cfg.cpu_usage, f64::from(sys.global_cpu_usage()) / 100.0);
+                }
+
+                // Memory (bytes)
+                if cfg.memory_usage.enable || cfg.memory_avail.enable {
+                    sys.refresh_memory();
+                    record(&cfg.memory_usage, sys.used_memory() as f64);
+                    record(&cfg.memory_avail, sys.available_memory() as f64);
+                }
+
+                // Disk (bytes), summed across all mounted disks
+                if cfg.disk_usage.enable || cfg.disk_avail.enable {
+                    disks.refresh(true);
+                    let (total, avail) = disks.list().iter().fold((0u64, 0u64), |(t, a), d| {
+                        (t + d.total_space(), a + d.available_space())
+                    });
+                    record(&cfg.disk_usage, total.saturating_sub(avail) as f64);
+                    record(&cfg.disk_avail, avail as f64);
+                }
+
+                // Network: cumulative bytes, so these are true counters
+                if cfg.network_received.enable || cfg.network_sent.enable {
+                    networks.refresh(true);
+                    let (rx, tx) = networks.iter().fold((0u64, 0u64), |(r, t), (_, n)| {
+                        (r + n.received(), t + n.transmitted())
+                    });
+                    record(&cfg.network_received, rx as f64);
+                    record(&cfg.network_sent, tx as f64);
+                }
+            }
+        });
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "metrics")]
+fn record(cfg: &MetricsConfig, value: f64) {
+    if !cfg.enable {
+        return;
+    }
+
+    let labels: Vec<metrics::Label> = cfg
+        .labels
+        .iter()
+        .map(|(k, v)| metrics::Label::new(*k, *v))
+        .collect();
+
+    match cfg.metric_type {
+        MetricType::Gauge => metrics::gauge!(cfg.name, labels).set(value),
+        MetricType::Counter => metrics::counter!(cfg.name, labels).increment(value as u64),
+        MetricType::Histogram => metrics::histogram!(cfg.name, labels).record(value),
+    }
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            system_metrics: SystemMetrics::default(),
+            init_fn: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SystemMetrics {
+    pub enable: bool,
+    pub refresh_duration: std::time::Duration,
+    pub cpu_usage: MetricsConfig,
+    pub memory_usage: MetricsConfig,
+    pub memory_avail: MetricsConfig,
+    pub disk_usage: MetricsConfig,
+    pub disk_avail: MetricsConfig,
+    pub network_received: MetricsConfig,
+    pub network_sent: MetricsConfig,
+}
+
+impl Default for SystemMetrics {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            refresh_duration: std::time::Duration::from_millis(1000), // every second
+            cpu_usage: MetricsConfig {
+                enable: true,
+                name: "system.cpu.utilization",
+                metric_type: MetricType::Gauge,
+                labels: &[],
+            },
+            memory_usage: MetricsConfig {
+                enable: true,
+                name: "system.memory.usage",
+                metric_type: MetricType::Gauge,
+                labels: &[("system.memory.state", "used")],
+            },
+            memory_avail: MetricsConfig {
+                enable: true,
+                name: "system.memory.usage",
+                metric_type: MetricType::Gauge,
+                labels: &[("system.memory.state", "free")],
+            },
+            disk_usage: MetricsConfig {
+                enable: true,
+                name: "system.filesystem.usage",
+                metric_type: MetricType::Gauge,
+                labels: &[("system.filesystem.state", "used")],
+            },
+            disk_avail: MetricsConfig {
+                enable: true,
+                name: "system.filesystem.usage",
+                metric_type: MetricType::Gauge,
+                labels: &[("system.filesystem.state", "free")],
+            },
+            network_received: MetricsConfig {
+                enable: false,
+                name: "system.network.io",
+                metric_type: MetricType::Counter,
+                labels: &[("network.io.direction", "receive")],
+            },
+            network_sent: MetricsConfig {
+                enable: false,
+                name: "system.network.io",
+                metric_type: MetricType::Counter,
+                labels: &[("network.io.direction", "transmit")],
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MetricsConfig {
+    pub enable: bool,
+    pub name: &'static str,
+    pub metric_type: MetricType,
+    pub labels: &'static [(&'static str, &'static str)],
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MetricType {
+    Gauge,
+    Counter,
+    Histogram,
 }

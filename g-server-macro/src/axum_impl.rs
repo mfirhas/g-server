@@ -391,6 +391,27 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         quote! {}
     };
 
+    let metrics_init = if let Some(config) = servers.iter().find_map(|server| {
+        server
+            .body
+            .config
+            .iter()
+            .find(|config| config.name == crate::config::CONFIG_FIELD_METRICS)
+    }) {
+        let metrics_config = &config.value;
+        quote! {
+            #[cfg(feature = "metrics")]
+            {
+                match (#metrics_config).init() {
+                    Ok(()) => {},
+                    Err(err) => panic!("g-server: failed initializing metrics: {}", err),
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[g_server::tokio::main(crate = "g_server::tokio")]
         async fn main() {
@@ -400,6 +421,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
             #logging_init
             #tracing_init
+            #metrics_init
 
             #grace_shutdown_canc_token
 

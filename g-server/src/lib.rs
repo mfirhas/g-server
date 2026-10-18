@@ -25,6 +25,11 @@ pub use ::rustls;
 #[cfg(feature = "tls")]
 pub use ::rustls_pemfile;
 
+#[cfg(feature = "metrics")]
+pub use ::metrics;
+#[cfg(feature = "metrics")]
+pub use ::sysinfo;
+
 pub use ::env_logger;
 pub use ::log;
 pub use ::tracing;
