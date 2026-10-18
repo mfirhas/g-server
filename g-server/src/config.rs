@@ -1109,6 +1109,9 @@ impl Metrics {
         if !cfg.enable {
             return Ok(());
         }
+        if cfg.refresh_duration.is_zero() {
+            return Err("g-server: system metrics `refresh_duration` must not be zero".into());
+        }
 
         println!("g-server: initializing system metrics...");
 
