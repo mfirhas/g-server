@@ -27,6 +27,8 @@ pub use ::rustls_pemfile;
 
 #[cfg(feature = "metrics")]
 pub use ::metrics;
+#[cfg(feature = "prometheus")]
+pub use ::metrics_exporter_prometheus;
 #[cfg(feature = "metrics")]
 pub use ::sysinfo;
 

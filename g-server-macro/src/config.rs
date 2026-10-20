@@ -1029,6 +1029,7 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     syn::braced!(content in input);
 
     let mut system: Option<Expr> = None;
+    let mut prometheus: Option<Expr> = None;
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -1036,7 +1037,16 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
         content.parse::<Token![:]>()?;
 
         match field.to_string().as_str() {
-            "system" => system = Some(parse_system_metrics(&ident, &content)?),
+            "system" => system = Some(parse_system_metrics(ident, &content)?),
+            "prometheus" => {
+                if !cfg!(feature = "prometheus") {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`prometheus` config requires feature `prometheus`",
+                    ));
+                }
+                prometheus = Some(parse_prometheus(ident, &content)?)
+            }
             _ => {
                 return Err(syn::Error::new(ident.span(), "invalid metrics config"));
             }
@@ -1045,10 +1055,12 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     }
 
     let system = system.unwrap_or(syn::parse_quote!(g_server::config::SystemMetrics::default()));
+    let prometheus = prometheus.unwrap_or(syn::parse_quote!(None));
 
     Ok(syn::parse_quote! {
         g_server::config::Metrics {
             system_metrics: #system,
+            prometheus: #prometheus,
             init_fn: None,
         }
     })
@@ -1177,7 +1189,72 @@ fn parse_metrics_config(
         crate::consume_comma(&content)?;
     }
 
+    if updates.is_empty()
+        && (ident.to_string() == "network_received" || ident.to_string() == "network_sent")
+    {
+        updates.push(quote! {
+            __system.#metric.enable = true;
+        });
+        updates.push(quote! {
+            __system.#metric.name = "system.network.io";
+        });
+        if ident.to_string() == "network_received" {
+            updates.push(quote! {
+                __system.#metric.labels = &[("network.io.direction", "receive")];
+            });
+        } else if ident.to_string() == "network_sent" {
+            updates.push(quote! {
+                __system.#metric.labels = &[("network.io.direction", "transmit")];
+            });
+        } else {
+            return Err(syn::Error::new(ident.span(), "invalid metrics configs"));
+        }
+    }
+
     Ok(updates)
+}
+
+fn parse_prometheus(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut updates = Vec::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "enable" => {
+                let value: syn::LitBool = content.parse()?;
+                updates.push(quote::quote! {
+                    __prometheus.enable = #value;
+                });
+            }
+            "endpoint" => {
+                let value: Expr = content.parse()?;
+                updates.push(quote::quote! {
+                    __prometheus.endpoint = #value;
+                });
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("invalid `{ident}` config"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    Ok(syn::parse_quote! {
+        Some({
+            let mut __prometheus = g_server::config::Prometheus::default();
+            #(#updates)*
+            __prometheus
+        })
+    })
 }
 
 /// validate config entries that depend on other config entries.

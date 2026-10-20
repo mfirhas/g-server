@@ -842,6 +842,41 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
         }
     });
 
+    let prometheus_init = if let Some(config) = server
+        .body
+        .config
+        .iter()
+        .find(|config| config.name == crate::config::CONFIG_FIELD_METRICS)
+    {
+        let metrics_config = &config.value;
+        quote! {
+            #[cfg(all(feature = "metrics", feature = "prometheus"))]
+            {
+                router = if let Some(prometheus_config) = &(#metrics_config).prometheus && prometheus_config.enable {
+                    println!("g-server: initializing prometheus exporter...");
+
+                    use g_server::metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+
+                    let metrics_endpoint = prometheus_config.endpoint;
+
+                    async fn metrics_handler(g_server::axum::extract::State(handle): g_server::axum::extract::State<PrometheusHandle>) -> std::result::Result<String, std::convert::Infallible> {
+                        Ok(handle.render())
+                    }
+
+                    let handle = PrometheusBuilder::new().install_recorder().expect("g-server: failed initializing prometheus exporter");
+
+                    router = router.route(metrics_endpoint, g_server::axum::routing::get(metrics_handler).with_state(handle));
+
+                    router
+                } else {
+                    router
+                };
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         pub async fn #init() -> std::result::Result<(g_server::Server, g_server::axum::Router<()>), String> {
             let server =
@@ -865,6 +900,8 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
             #(#group_calls)*
 
             router = __register_global_middlewares(&global_config, router);
+
+            #prometheus_init
 
             let router = router.with_state(context);
 

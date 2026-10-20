@@ -162,8 +162,10 @@ gserver! {
             }
             metrics: {
                 system: {
-
+                    network_received: {},
+                    network_sent: {},
                 },
+                prometheus: {},
             }
             request_id: {
                 header: HDR,

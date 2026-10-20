@@ -1,3 +1,6 @@
+use tokio::fs;
+use tokio::time::Instant;
+
 use crate::axum::response::IntoResponse;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -1085,6 +1088,8 @@ pub enum LogOutput {
 pub struct Metrics {
     pub system_metrics: SystemMetrics,
 
+    pub prometheus: Option<Prometheus>,
+
     /// `init()` function to initializes the metrics recorder
     pub init_fn: Option<
         fn()
@@ -1116,9 +1121,11 @@ impl Metrics {
         println!("g-server: initializing system metrics...");
 
         tokio::spawn(async move {
-            let mut sys = System::new();
+            let mut sys = System::new_all();
             let mut disks = Disks::new_with_refreshed_list();
             let mut networks = Networks::new_with_refreshed_list();
+            let mut cpu_reader = CpuReader::new().await;
+            let iface = NetworkReader::default_interface().await;
 
             // tokio::time::interval panics on a zero period.
             let period = cfg
@@ -1135,36 +1142,35 @@ impl Metrics {
                 ticker.tick().await;
 
                 // CPU: sysinfo reports percent (0..100), OTel utilization is 0..1.
+                // cgroup aware
                 if cfg.cpu_usage.enable {
-                    sys.refresh_cpu_usage();
-                    record(&cfg.cpu_usage, f64::from(sys.global_cpu_usage()) / 100.0);
+                    let cpu_usage = cpu_reader.read(&mut sys).await;
+                    record(&cfg.cpu_usage, cpu_usage);
                 }
 
                 // Memory (bytes)
+                // cgroup aware
                 if cfg.memory_usage.enable || cfg.memory_avail.enable {
-                    sys.refresh_memory();
-                    record(&cfg.memory_usage, sys.used_memory() as f64);
-                    record(&cfg.memory_avail, sys.available_memory() as f64);
+                    let (used_memory, avail_memory) = MemoryReader::read(&mut sys);
+                    record(&cfg.memory_usage, used_memory);
+                    record(&cfg.memory_avail, avail_memory);
                 }
 
-                // Disk (bytes), summed across all mounted disks
+                // Disk (bytes)
+                // host wide
                 if cfg.disk_usage.enable || cfg.disk_avail.enable {
-                    disks.refresh(true);
-                    let (total, avail) = disks.list().iter().fold((0u64, 0u64), |(t, a), d| {
-                        (t + d.total_space(), a + d.available_space())
-                    });
-                    record(&cfg.disk_usage, total.saturating_sub(avail) as f64);
-                    record(&cfg.disk_avail, avail as f64);
+                    let (used_disk, avail_disk) = DiskReader::read(&mut disks);
+                    record(&cfg.disk_usage, used_disk);
+                    record(&cfg.disk_avail, avail_disk);
                 }
 
-                // Network: cumulative bytes, so these are true counters
+                // Network(bytes)
+                // container aware
                 if cfg.network_received.enable || cfg.network_sent.enable {
-                    networks.refresh(true);
-                    let (rx, tx) = networks.iter().fold((0u64, 0u64), |(r, t), (_, n)| {
-                        (r + n.received(), t + n.transmitted())
-                    });
-                    record(&cfg.network_received, rx as f64);
-                    record(&cfg.network_sent, tx as f64);
+                    let (network_received, network_transmitted) =
+                        NetworkReader::read(&mut networks, iface.as_deref());
+                    record(&cfg.network_received, network_received);
+                    record(&cfg.network_sent, network_transmitted);
                 }
             }
         });
@@ -1196,6 +1202,7 @@ impl Default for Metrics {
     fn default() -> Self {
         Self {
             system_metrics: SystemMetrics::default(),
+            prometheus: None,
             init_fn: None,
         }
     }
@@ -1278,4 +1285,150 @@ pub enum MetricType {
     Gauge,
     Counter,
     Histogram,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CpuReader {
+    prev: Option<(u64, Instant)>,
+}
+
+impl CpuReader {
+    pub async fn new() -> Self {
+        Self {
+            prev: Self::cgroup_usage_usec().await.map(|u| (u, Instant::now())),
+        }
+    }
+
+    async fn cgroup_usage_usec() -> Option<u64> {
+        fs::read_to_string("/sys/fs/cgroup/cpu.stat")
+            .await
+            .ok()?
+            .lines()
+            .find_map(|l| l.strip_prefix("usage_usec ")?.trim().parse().ok())
+    }
+
+    /// CPUs this cgroup may use: quota from `cpu.max` if set, else all visible cores.
+    async fn cgroup_cpu_limit() -> f64 {
+        fs::read_to_string("/sys/fs/cgroup/cpu.max")
+            .await
+            .ok()
+            .and_then(|s| {
+                let mut it = s.split_whitespace();
+                let quota: f64 = it.next()?.parse().ok()?; // "max" -> None
+                let period: f64 = it.next()?.parse().ok()?;
+                Some(quota / period)
+            })
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(1.0, |n| n.get() as f64))
+    }
+
+    /// CPU utilization in 0..1. Relative to the container's CPU limit when
+    /// cgroup v2 is available, otherwise host-wide via the given `System`.
+    pub async fn read(&mut self, sys: &mut crate::sysinfo::System) -> f64 {
+        if let Some(usec) = Self::cgroup_usage_usec().await {
+            let now = Instant::now();
+            if let Some((prev_usec, prev_at)) = self.prev.replace((usec, now)) {
+                let used = usec.saturating_sub(prev_usec) as f64;
+                let wall = now.duration_since(prev_at).as_micros() as f64;
+                if wall > 0.0 {
+                    return (used / (wall * Self::cgroup_cpu_limit().await)).clamp(0.0, 1.0);
+                }
+            }
+        }
+        sys.refresh_cpu_usage();
+        f64::from(sys.global_cpu_usage()) / 100.0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryReader;
+
+impl MemoryReader {
+    pub(crate) fn read(sys: &mut crate::sysinfo::System) -> (f64, f64) {
+        sys.refresh_memory();
+        match sys.cgroup_limits() {
+            Some(l) => {
+                let used = l.rss;
+                let avail = l.total_memory.saturating_sub(used);
+                (used as f64, avail as f64)
+            }
+            None => {
+                let used = sys.used_memory();
+                let avail = sys.total_memory().saturating_sub(used);
+                (used as f64, avail as f64)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct DiskReader;
+
+impl DiskReader {
+    pub(crate) fn read(disks: &mut crate::sysinfo::Disks) -> (f64, f64) {
+        disks.refresh(true);
+        let path = std::path::Path::new("/");
+        if let Some((total, avail)) = disks
+            .list()
+            .iter()
+            .filter(|d| path.starts_with(d.mount_point()))
+            .max_by_key(|d| d.mount_point().as_os_str().len()) // longest match wins
+            .map(|d| (d.total_space(), d.available_space()))
+        {
+            return ((total - avail) as f64, avail as f64);
+        }
+        (0.into(), 0.into())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NetworkReader;
+
+impl NetworkReader {
+    pub(crate) async fn default_interface() -> Option<String> {
+        let route = fs::read_to_string("/proc/net/route").await.ok()?;
+        route.lines().skip(1).find_map(|l| {
+            let mut f = l.split_whitespace();
+            let iface = f.next()?;
+            let dest = f.next()?;
+            (dest == "00000000").then(|| iface.to_owned())
+        })
+    }
+
+    pub(crate) fn read(networks: &mut crate::sysinfo::Networks, iface: Option<&str>) -> (f64, f64) {
+        networks.refresh(true);
+        networks
+            .iter()
+            .filter(|(name, _)| match iface {
+                Some(i) => name.as_str() == i,
+                // fallback: skip loopback and virtual interfaces
+                None => {
+                    let n = name.as_str();
+                    n != "lo"
+                        && !["docker", "br-", "veth", "cni", "flannel", "cali", "virbr"]
+                            .iter()
+                            .any(|p| n.starts_with(p))
+                }
+            })
+            .fold((0 as f64, 0 as f64), |(r, t), (_, d)| {
+                (
+                    r + d.total_received() as f64,
+                    t + d.total_transmitted() as f64,
+                )
+            })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Prometheus {
+    pub enable: bool,
+    pub endpoint: &'static str,
+}
+
+impl Default for Prometheus {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            endpoint: "/metrics",
+        }
+    }
 }

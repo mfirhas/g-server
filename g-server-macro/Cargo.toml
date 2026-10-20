@@ -32,6 +32,7 @@ all-features = true
 embed = []
 tls = []
 metrics = []
+prometheus = []
 
 [dependencies]
 proc-macro2 = "1"

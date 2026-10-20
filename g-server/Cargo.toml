@@ -29,6 +29,7 @@ all-features = true
 embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
 tls = ["dep:axum-server", "dep:rustls", "dep:rustls-pemfile", "g-server-macro/tls"]
 metrics = ["dep:metrics", "dep:sysinfo", "g-server-macro/metrics"]
+prometheus = ["dep:metrics-exporter-prometheus", "g-server-macro/prometheus"]
 
 [dependencies]
 g-server-macro = { path = "../g-server-macro" }
@@ -58,6 +59,7 @@ rustls = { version = "0.23", optional = true }
 rustls-pemfile = { version = "2", optional = true }
 metrics = { version = "0.24", optional = true }
 sysinfo = { version = "0.39", optional = true }
+metrics-exporter-prometheus = { version = "0.17", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
