@@ -1127,10 +1127,16 @@ impl Metrics {
         if cfg.refresh_duration.is_zero() {
             return Err("g-server: system metrics `refresh_duration` must not be zero".into());
         }
+        if cfg.refresh_duration < crate::sysinfo::MINIMUM_CPU_UPDATE_INTERVAL {
+            return Err(format!(
+                "g-server: minimum refresh_duration is {:?}",
+                crate::sysinfo::MINIMUM_CPU_UPDATE_INTERVAL
+            ));
+        }
 
         println!("g-server: initializing system metrics...");
 
-        tokio::spawn(async move {
+        crate::tokio::spawn(async move {
             let mut sys = System::new_all();
             let mut disks = Disks::new_with_refreshed_list();
             let mut networks = Networks::new_with_refreshed_list();
