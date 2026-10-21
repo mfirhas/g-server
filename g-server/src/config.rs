@@ -1,7 +1,15 @@
-use tokio::fs;
-use tokio::time::Instant;
+use crate::metrics::{self, Label};
 
+use crate::http::Method;
+
+use crate::axum::extract::MatchedPath;
+use crate::http::header::CONTENT_LENGTH;
+use crate::tokio::fs;
+use crate::tokio::time::Instant;
+
+use crate::HeaderMap;
 use crate::axum::response::IntoResponse;
+use std::borrow::Cow;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
@@ -1088,6 +1096,8 @@ pub enum LogOutput {
 pub struct Metrics {
     pub system_metrics: SystemMetrics,
 
+    pub app_metrics: AppMetrics,
+
     pub prometheus: Option<Prometheus>,
 
     /// `init()` function to initializes the metrics recorder
@@ -1177,6 +1187,68 @@ impl Metrics {
 
         Ok(())
     }
+
+    #[cfg(feature = "metrics")]
+    pub async fn metrics_middleware(
+        crate::axum::extract::State(app_metrics): crate::axum::extract::State<AppMetrics>,
+        request: crate::axum::extract::Request,
+        next: crate::axum::middleware::Next,
+    ) -> crate::axum::response::Response {
+        if !app_metrics.enable {
+            return next.run(request).await;
+        }
+
+        let method = method_str(request.method());
+        // Use the route template (`/users/{id}`), never the raw path, to keep label cardinality bounded.
+        let route = request
+            .extensions()
+            .get::<MatchedPath>()
+            .map(|p| p.as_str().to_owned())
+            .unwrap_or_else(|| "unmatched".to_owned());
+
+        let _active_guard = app_metrics
+            .active_requests
+            .enable
+            .then(|| ActiveRequestGuard::new(app_metrics.active_requests.name));
+
+        let cfg = &app_metrics.request_body_size;
+        if cfg.enable {
+            if let Some(size) = content_length(request.headers()) {
+                let labels = labels_method_route(&cfg.label_name, method, &route);
+                metrics::histogram!(cfg.name, labels.iter()).record(size);
+            }
+        }
+
+        let start = Instant::now();
+
+        let response = next.run(request).await;
+
+        let elapsed = start.elapsed().as_secs_f64();
+
+        let status = response.status().as_u16();
+
+        let cfg = &app_metrics.request_latency;
+        if cfg.enable {
+            let labels = labels_method_route_status(&cfg.label_name, &method, &route, status);
+            metrics::histogram!(cfg.name, labels.iter()).record(elapsed);
+        }
+
+        let labels = labels_method_route_status(&cfg.label_name, &method, &route, status);
+
+        let cfg = &app_metrics.requests_count;
+        if cfg.enable {
+            metrics::counter!(cfg.name, labels.iter()).increment(1);
+        }
+
+        let cfg = &app_metrics.response_body_size;
+        if cfg.enable {
+            if let Some(size) = content_length(response.headers()) {
+                metrics::histogram!(cfg.name, labels.iter()).record(size);
+            }
+        }
+
+        response
+    }
 }
 
 #[cfg(feature = "metrics")]
@@ -1188,7 +1260,7 @@ fn record(cfg: &MetricsConfig, value: f64) {
     let labels: Vec<metrics::Label> = cfg
         .labels
         .iter()
-        .map(|(k, v)| metrics::Label::new(*k, *v))
+        .map(|(k, v)| metrics::Label::new(*k, v.to_owned()))
         .collect();
 
     match cfg.metric_type {
@@ -1202,6 +1274,7 @@ impl Default for Metrics {
     fn default() -> Self {
         Self {
             system_metrics: SystemMetrics::default(),
+            app_metrics: AppMetrics::default(),
             prometheus: None,
             init_fn: None,
         }
@@ -1230,54 +1303,196 @@ impl Default for SystemMetrics {
                 enable: true,
                 name: "system.cpu.utilization",
                 metric_type: MetricType::Gauge,
-                labels: &[],
+                labels: [].into(),
             },
             memory_usage: MetricsConfig {
                 enable: true,
                 name: "system.memory.usage",
                 metric_type: MetricType::Gauge,
-                labels: &[("system.memory.state", "used")],
+                labels: [("system.memory.state", "used".into())].into(),
             },
             memory_avail: MetricsConfig {
                 enable: true,
                 name: "system.memory.usage",
                 metric_type: MetricType::Gauge,
-                labels: &[("system.memory.state", "free")],
+                labels: [("system.memory.state", "free".into())].into(),
             },
             disk_usage: MetricsConfig {
                 enable: true,
                 name: "system.filesystem.usage",
                 metric_type: MetricType::Gauge,
-                labels: &[("system.filesystem.state", "used")],
+                labels: [("system.filesystem.state", "used".into())].into(),
             },
             disk_avail: MetricsConfig {
                 enable: true,
                 name: "system.filesystem.usage",
                 metric_type: MetricType::Gauge,
-                labels: &[("system.filesystem.state", "free")],
+                labels: [("system.filesystem.state", "free".into())].into(),
             },
             network_received: MetricsConfig {
                 enable: false,
                 name: "system.network.io",
                 metric_type: MetricType::Counter,
-                labels: &[("network.io.direction", "receive")],
+                labels: [("network.io.direction", "receive".into())].into(),
             },
             network_sent: MetricsConfig {
                 enable: false,
                 name: "system.network.io",
                 metric_type: MetricType::Counter,
-                labels: &[("network.io.direction", "transmit")],
+                labels: [("network.io.direction", "transmit".into())].into(),
             },
         }
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+pub struct AppMetrics {
+    pub enable: bool,
+    pub request_latency: AppMetricsConfig,
+    pub requests_count: AppMetricsConfig,
+    pub active_requests: AppMetricsConfig,
+    pub request_body_size: AppMetricsConfig,
+    pub response_body_size: AppMetricsConfig,
+}
+
+impl Default for AppMetrics {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            request_latency: AppMetricsConfig {
+                enable: true,
+                name: "http.server.request.duration",
+                metric_type: MetricType::Histogram,
+                label_name: LabelName::default(),
+            },
+            requests_count: AppMetricsConfig {
+                enable: true,
+                name: "http.server.request.total",
+                metric_type: MetricType::Counter,
+                label_name: LabelName::default(),
+            },
+            active_requests: AppMetricsConfig {
+                enable: true,
+                name: "http.server.active_requests",
+                metric_type: MetricType::Gauge,
+                label_name: LabelName::default(),
+            },
+            request_body_size: AppMetricsConfig {
+                enable: true,
+                name: "http.server.request.body.size",
+                metric_type: MetricType::Histogram,
+                label_name: LabelName::default(),
+            },
+            response_body_size: AppMetricsConfig {
+                enable: true,
+                name: "http.server.response.body.size",
+                metric_type: MetricType::Histogram,
+                label_name: LabelName::default(),
+            },
+        }
+    }
+}
+
+// app metrics middleware helpers
+struct ActiveRequestGuard {
+    name: &'static str,
+}
+
+impl ActiveRequestGuard {
+    fn new(name: &'static str) -> Self {
+        metrics::gauge!(name).increment(1.0);
+        Self { name }
+    }
+}
+
+impl Drop for ActiveRequestGuard {
+    fn drop(&mut self) {
+        metrics::gauge!(self.name).decrement(1.0);
+    }
+}
+
+fn content_length(headers: &HeaderMap) -> Option<f64> {
+    headers
+        .get(CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .parse::<u64>()
+        .ok()
+        .map(|v| v as f64)
+}
+
+/// Standard methods map to static strs. Anything else becomes `_OTHER`
+/// (OTel convention), which also bounds label cardinality.
+fn method_str(method: &Method) -> &'static str {
+    match *method {
+        Method::GET => "GET",
+        Method::POST => "POST",
+        Method::PUT => "PUT",
+        Method::DELETE => "DELETE",
+        Method::HEAD => "HEAD",
+        Method::OPTIONS => "OPTIONS",
+        Method::PATCH => "PATCH",
+        Method::TRACE => "TRACE",
+        Method::CONNECT => "CONNECT",
+        Method::QUERY => "QUERY",
+        _ => "_OTHER",
+    }
+}
+
+/// `method` + `route` labels (request body size).
+fn labels_method_route(names: &LabelName, method: &'static str, route: &str) -> [Label; 2] {
+    [
+        Label::from_static_parts(names.method, method),
+        Label::new(names.route, route.to_owned()),
+    ]
+}
+
+/// `method` + `route` + `status` labels (latency, count, response body size).
+fn labels_method_route_status(
+    names: &LabelName,
+    method: &'static str,
+    route: &str,
+    status: u16,
+) -> [Label; 3] {
+    [
+        Label::from_static_parts(names.method, method),
+        Label::new(names.route, route.to_owned()),
+        Label::new(names.status, status.to_string()),
+    ]
+}
+// -------------------------------
+
+#[derive(Debug, Clone)]
 pub struct MetricsConfig {
     pub enable: bool,
     pub name: &'static str,
     pub metric_type: MetricType,
-    pub labels: &'static [(&'static str, &'static str)],
+    pub labels: Vec<(&'static str, Cow<'static, str>)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AppMetricsConfig {
+    pub enable: bool,
+    pub name: &'static str,
+    pub metric_type: MetricType,
+    pub label_name: LabelName,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct LabelName {
+    pub method: &'static str,
+    pub route: &'static str,
+    pub status: &'static str,
+}
+
+impl Default for LabelName {
+    fn default() -> Self {
+        Self {
+            method: "http.request.method",
+            route: "http.route",
+            status: "http.response.status_code",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

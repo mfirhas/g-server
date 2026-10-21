@@ -447,6 +447,36 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
             C: Clone + Send + Sync + 'static,
             RLKey: std::fmt::Debug + Eq + PartialEq + Clone + std::hash::Hash + g_server::config::CustomKey + Send + Sync + 'static,
         {
+            if let Some(ref metrics_cfg) = global_config.metrics {
+                #[cfg(feature = "metrics")]
+                {
+                    router = router.layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            metrics_cfg.app_metrics.clone(),
+                            g_server::config::Metrics::metrics_middleware,
+                        )
+                    )
+                }
+            }
+
+            if let Some(ref tracing_cfg) = global_config.tracing {
+                if let Some(ref req_id) = global_config.request_id {
+                    router = router.layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
+                            g_server::config::Tracing::tracing_middleware,
+                        )
+                    )
+                } else {
+                    router = router.layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            (tracing_cfg.correlation_id.clone(), None),
+                            g_server::config::Tracing::tracing_middleware,
+                        )
+                    )
+                }
+            }
+
             if let Some(c) = global_config.compression {
                 router = router.layer(match c {
                     g_server::Compression::All => g_server::tower_http::compression::CompressionLayer::new(),
@@ -467,24 +497,6 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
                         .no_br()
                         .no_zstd(),
                 });
-            }
-
-            if let Some(ref tracing_cfg) = global_config.tracing {
-                if let Some(ref req_id) = global_config.request_id {
-                    router = router.layer(
-                        g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
-                            g_server::config::Tracing::tracing_middleware,
-                        )
-                    )
-                } else {
-                    router = router.layer(
-                        g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), None),
-                            g_server::config::Tracing::tracing_middleware,
-                        )
-                    )
-                }
             }
 
             if let Some(bytes) = global_config.body_limit {
@@ -604,6 +616,36 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
             C: Clone + Send + Sync + 'static,
             RLKey: std::fmt::Debug + Eq + PartialEq + Clone + std::hash::Hash + g_server::config::CustomKey + Send + Sync + 'static,
         {
+            if let Some(ref metrics_cfg) = config.metrics {
+                #[cfg(feature = "metrics")]
+                {
+                    router = router.route_layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            metrics_cfg.app_metrics.clone(),
+                            g_server::config::Metrics::metrics_middleware,
+                        )
+                    )
+                }
+            }
+
+            if let Some(ref tracing_cfg) = config.tracing {
+                if let Some(ref req_id) = config.request_id {
+                    router = router.route_layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
+                            g_server::config::Tracing::tracing_middleware,
+                        )
+                    )
+                } else {
+                    router = router.route_layer(
+                        g_server::axum::middleware::from_fn_with_state(
+                            (tracing_cfg.correlation_id.clone(), None),
+                            g_server::config::Tracing::tracing_middleware,
+                        )
+                    )
+                }
+            }
+
             if let Some(c) = config.compression {
                 router = router.route_layer(match c {
                     g_server::Compression::All => g_server::tower_http::compression::CompressionLayer::new(),
@@ -624,24 +666,6 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
                         .no_br()
                         .no_zstd(),
                 });
-            }
-
-            if let Some(ref tracing_cfg) = config.tracing {
-                if let Some(ref req_id) = config.request_id {
-                    router = router.route_layer(
-                        g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
-                            g_server::config::Tracing::tracing_middleware,
-                        )
-                    )
-                } else {
-                    router = router.route_layer(
-                        g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), None),
-                            g_server::config::Tracing::tracing_middleware,
-                        )
-                    )
-                }
             }
 
             if let Some(bytes) = config.body_limit {

@@ -1029,6 +1029,7 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     syn::braced!(content in input);
 
     let mut system: Option<Expr> = None;
+    let mut app: Option<Expr> = None;
     let mut prometheus: Option<Expr> = None;
 
     while !content.is_empty() {
@@ -1038,6 +1039,7 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
 
         match field.to_string().as_str() {
             "system" => system = Some(parse_system_metrics(ident, &content)?),
+            "app" => app = Some(parse_app_metrics(ident, &content)?),
             "prometheus" => {
                 if !cfg!(feature = "prometheus") {
                     return Err(syn::Error::new(
@@ -1054,12 +1056,15 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
         crate::consume_comma(&content)?;
     }
 
-    let system = system.unwrap_or(syn::parse_quote!(g_server::config::SystemMetrics::default()));
+    let system_metrics =
+        system.unwrap_or(syn::parse_quote!(g_server::config::SystemMetrics::default()));
+    let app_metrics = app.unwrap_or(syn::parse_quote!(g_server::config::AppMetrics::default()));
     let prometheus = prometheus.unwrap_or(syn::parse_quote!(None));
 
     Ok(syn::parse_quote! {
         g_server::config::Metrics {
-            system_metrics: #system,
+            system_metrics: #system_metrics,
+            app_metrics: #app_metrics,
             prometheus: #prometheus,
             init_fn: None,
         }
@@ -1119,6 +1124,203 @@ fn parse_system_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     })
 }
 
+/*
+    metrics: {
+        system: ...
+        app: {
+            enable: bool
+            request_latency: {
+                enable: bool
+                name: string
+                label_name: {
+                    method: string
+                    route: string
+                    status: string
+                }
+            }
+            requests_count: {
+                enable: bool
+                name: string
+                label_name: {
+                    method: string
+                    route: string
+                    status: string
+                }
+            }
+            active_requests: {
+                enable: bool
+                name: string
+            }
+            request_body_size: {
+                enable: bool
+                name: string
+                label_name: {
+                    method: string
+                    route: string
+                }
+            }
+            response_body_size: {
+                enable: bool
+                name: string
+                label_name: {
+                    method: string
+                    route: string
+                    status: string
+                }
+            }
+        }
+    }
+*/
+/// Label fields each app metric accepts in `label_name`.
+/// An empty slice means the metric has no `label_name` option.
+fn allowed_label_names(metric: &str) -> &'static [&'static str] {
+    match metric {
+        "request_latency" | "requests_count" | "response_body_size" => {
+            &["method", "route", "status"]
+        }
+        "request_body_size" => &["method", "route"],
+        _ => &[],
+    }
+}
+
+fn parse_app_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut updates = Vec::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "enable" => {
+                let value: syn::LitBool = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __app.enable = #value;
+                });
+            }
+            "request_latency" | "requests_count" | "active_requests" | "request_body_size"
+            | "response_body_size" => {
+                updates.extend(parse_app_metric_config(&field, &content)?);
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("invalid `{ident}` app metrics config"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    Ok(syn::parse_quote! {
+        {
+            let mut __app = g_server::config::AppMetrics::default();
+
+            #(#updates)*
+
+            __app
+        }
+    })
+}
+
+/// Parses one app metric block: `{ enable: bool, name: "..", label_name: { .. } }`
+fn parse_app_metric_config(
+    metric: &Ident,
+    input: ParseStream<'_>,
+) -> Result<Vec<proc_macro2::TokenStream>> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut updates = Vec::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "enable" => {
+                let value: syn::LitBool = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __app.#metric.enable = #value;
+                });
+            }
+            "name" => {
+                let value: syn::LitStr = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __app.#metric.name = #value;
+                });
+            }
+            "label_name" => {
+                updates.extend(parse_app_label_name(metric, &field, &content)?);
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("invalid `{metric}` metrics config"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    Ok(updates)
+}
+
+/// Parses `label_name: { method: "..", route: "..", status: ".." }`,
+/// rejecting labels the metric doesn't support.
+fn parse_app_label_name(
+    metric: &Ident,
+    label_name_key: &Ident,
+    input: ParseStream<'_>,
+) -> Result<Vec<proc_macro2::TokenStream>> {
+    let allowed = allowed_label_names(&metric.to_string());
+
+    if allowed.is_empty() {
+        return Err(syn::Error::new(
+            label_name_key.span(),
+            format!("`{metric}` does not support `label_name`"),
+        ));
+    }
+
+    let content;
+    syn::braced!(content in input);
+
+    let mut updates = Vec::new();
+
+    while !content.is_empty() {
+        let label: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        if !allowed.contains(&label.to_string().as_str()) {
+            return Err(syn::Error::new(
+                label.span(),
+                format!(
+                    "invalid `{metric}` label name `{label}`, expected one of: {}",
+                    allowed.join(", ")
+                ),
+            ));
+        }
+
+        let value: syn::LitStr = content.parse()?;
+
+        // `label` matches the `LabelName` field name (method / route / status).
+        updates.push(quote::quote! {
+            __app.#metric.label_name.#label = #value;
+        });
+
+        crate::consume_comma(&content)?;
+    }
+
+    Ok(updates)
+}
+
 fn parse_metrics_config(
     ident: &Ident,
     input: ParseStream<'_>,
@@ -1171,11 +1373,11 @@ fn parse_metrics_config(
                 }
 
                 let labels = labels.iter().map(|(key, value)| {
-                    quote::quote! { (#key, #value) }
+                    quote::quote! { (#key, (#value).into()) }
                 });
 
                 updates.push(quote::quote! {
-                    __system.#metric.labels = &[#(#labels),*];
+                    __system.#metric.labels = vec![#(#labels),*];
                 });
             }
             _ => {
@@ -1200,11 +1402,11 @@ fn parse_metrics_config(
         });
         if ident.to_string() == "network_received" {
             updates.push(quote! {
-                __system.#metric.labels = &[("network.io.direction", "receive")];
+                __system.#metric.labels = [("network.io.direction", "receive".into())].into();
             });
         } else if ident.to_string() == "network_sent" {
             updates.push(quote! {
-                __system.#metric.labels = &[("network.io.direction", "transmit")];
+                __system.#metric.labels = [("network.io.direction", "transmit".into())].into();
             });
         } else {
             return Err(syn::Error::new(ident.span(), "invalid metrics configs"));

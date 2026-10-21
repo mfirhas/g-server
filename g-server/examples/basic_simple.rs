@@ -165,6 +165,7 @@ gserver! {
                     network_received: {},
                     network_sent: {},
                 },
+                app: {enable:false},
                 prometheus: {},
             }
             request_id: {
