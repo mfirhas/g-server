@@ -162,6 +162,7 @@ gserver! {
             }
             metrics: {
                 system: {
+                    refresh_duration: 1000,
                     network_received: {},
                     network_sent: {},
                 },
