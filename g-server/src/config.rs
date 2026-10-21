@@ -1000,9 +1000,9 @@ impl Tracing {
 
         let corr_id_hdr_val = if let Some(corr_id_val) = request.headers().get(&corr_id_cfg.header)
         {
-            corr_id_val
+            corr_id_val.clone()
         } else {
-            &corr_id_cfg
+            corr_id_cfg
                 .try_new_id()
                 .unwrap_or(crate::http::HeaderValue::from_static("<invalid>"))
         };
@@ -1032,11 +1032,13 @@ impl Tracing {
             )
         };
 
-        crate::tracing::info!("::REQUEST_BEGIN::");
+        let mut resp = next.run(request).instrument(span).await;
 
-        let resp = next.run(request).instrument(span).await;
-
-        crate::tracing::info!("::REQUEST_END::");
+        if let crate::http::header::Entry::Vacant(entry) =
+            resp.headers_mut().entry(&corr_id_cfg.header)
+        {
+            entry.insert(corr_id_hdr_val);
+        }
 
         resp
     }
