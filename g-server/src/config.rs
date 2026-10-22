@@ -14,6 +14,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
 
+pub const GRACEFUL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Server's config
 #[derive(Debug, Default)]
 pub struct Config<RLKey = ()> {

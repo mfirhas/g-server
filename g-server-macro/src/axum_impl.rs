@@ -179,7 +179,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             (
                 quote! { let handle = g_server::axum_server::Handle::new(); },
                 quote! { let handle = handle.clone(); },
-                quote! { handle.graceful_shutdown(Some(std::time::Duration::from_secs(5))); },
+                quote! { handle.graceful_shutdown(Some(g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT)); },
             )
         } else {
             (quote! {}, quote! {}, quote! {})
@@ -226,6 +226,10 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     signal_shutdown.cancel();
                     println!("shutting down...");
                     #tls_grace_handle_shutdown
+
+                    g_server::tokio::time::sleep(g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT).await;
+                    println!("g-server: drain timeout reached, forcing exit");
+                    std::process::exit(1);
                 });
             }
         }
