@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use rand::{RngExt, distr::Alphanumeric};
 use syn::{
-    Expr, ExprLit, Lit, LitInt, LitStr, Result, Token, braced,
+    Expr, ExprLit, Lit, LitInt, LitStr, Member, Result, Token, braced,
     parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
@@ -134,14 +134,22 @@ pub(crate) fn append_literal(expr: &Expr, suffix: &str) -> syn::Result<Expr> {
     }))
 }
 
-pub(crate) fn extract_bool(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Lit(ExprLit {
-            lit: Lit::Bool(value),
-            ..
-        }) if value.value
-    )
+pub(crate) fn is_graceful_shutdown_enable(expr: &Expr) -> bool {
+    if let Expr::Struct(s) = expr {
+        for field in &s.fields {
+            if let Member::Named(name) = &field.member {
+                if name == "enable" {
+                    if let Expr::Lit(ExprLit {
+                        lit: Lit::Bool(b), ..
+                    }) = &field.expr
+                    {
+                        return b.value;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 pub(crate) fn random_6_chars() -> String {

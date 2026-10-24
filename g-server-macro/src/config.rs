@@ -32,6 +32,7 @@ pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_LOGGING,
     CONFIG_FIELD_TRACING,
     CONFIG_FIELD_METRICS,
+    CONFIG_FIELD_GRACEFUL_SHUTDOWN,
 ];
 
 /// Configs that only allowed in server's root.
@@ -99,7 +100,9 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
 
         input.parse::<Token![:]>()?;
 
-        let value: Expr = if name.to_string() == CONFIG_FIELD_REQUEST_ID {
+        let value: Expr = if name.to_string() == CONFIG_FIELD_GRACEFUL_SHUTDOWN {
+            parse_graceful_shutdown(&name, input)?
+        } else if name.to_string() == CONFIG_FIELD_REQUEST_ID {
             parse_request_id(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_CORS {
             parse_cors(input)?
@@ -135,6 +138,87 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
     }
 
     Ok(entries)
+}
+
+/*
+    // when declared without body, default to enable: true, and empty cleanup_fns.
+    config: {
+        graceful_shutdown: {
+            enable: bool,
+            cleanup_fns: [list of async fn returning ()],
+        }
+    }
+*/
+fn parse_graceful_shutdown(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    // Declared without a body: enabled, no cleanup functions.
+    if !input.peek(syn::token::Brace) {
+        return Ok(syn::parse_quote!(g_server::config::GracefulShutdown {
+            enable: true,
+            cleanup_fns: &[],
+        }));
+    }
+
+    let content;
+    syn::braced!(content in input);
+
+    let mut enable: Option<syn::LitBool> = None;
+    let mut cleanup_fns: Option<Vec<syn::Path>> = None;
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        match field.to_string().as_str() {
+            "enable" => {
+                enable = Some(content.parse().map_err(|e| {
+                    syn::Error::new(
+                        e.span(),
+                        "`enable` expects a bool literal: `true` or `false`",
+                    )
+                })?);
+            }
+            "cleanup_fns" => {
+                let list;
+                syn::bracketed!(list in content);
+                let paths = syn::punctuated::Punctuated::<syn::Path, Token![,]>::parse_terminated(
+                    &list,
+                )
+                .map_err(|e| {
+                    syn::Error::new(
+                        e.span(),
+                        "`cleanup_fns` expects a list of paths to `async fn(Vec<Arc<dyn Any + Send + Sync>>)`",
+                    )
+                })?;
+                cleanup_fns = Some(paths.into_iter().collect());
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("unknown `graceful_shutdown` config `{field}`"),
+                ));
+            }
+        }
+
+        crate::consume_comma(&content)?;
+    }
+
+    let enable = enable.map(|b| b.value).unwrap_or(true);
+
+    // Each user fn is `async fn(Vec<Arc<dyn Any + Send + Sync>>)`, which returns an
+    // `impl Future`. Wrap it in a non-capturing closure so it coerces to the
+    // `fn(..) -> Pin<Box<dyn Future<Output = ()>>>` pointer the struct expects.
+    let wrapped = cleanup_fns
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| -> Expr {
+            syn::parse_quote!(|app_contexts| ::std::boxed::Box::pin(#path(app_contexts)))
+        })
+        .collect::<Vec<_>>();
+
+    Ok(syn::parse_quote!(g_server::config::GracefulShutdown {
+        enable: #enable,
+        cleanup_fns: &[#(#wrapped),*],
+    }))
 }
 
 fn parse_request_id(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
@@ -1730,7 +1814,7 @@ impl ConfigEntry {
             CONFIG_FIELD_BODY_LIMIT => Self::validate_integer(&value),
             CONFIG_FIELD_COMPRESSION => Self::validate_compression(&mut value),
             CONFIG_FIELD_NORMALIZE_ENDPOINT => Self::validate_bool(&value),
-            CONFIG_FIELD_GRACEFUL_SHUTDOWN => Self::validate_bool(&value),
+            CONFIG_FIELD_GRACEFUL_SHUTDOWN => Ok(()),
             CONFIG_FIELD_REQUEST_ID => Ok(()),
             CONFIG_FIELD_CORS => Ok(()),
             CONFIG_FIELD_RATE_LIMIT => Ok(()),

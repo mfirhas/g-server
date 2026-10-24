@@ -111,12 +111,13 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
         quote! {
             let #name = match #init().await {
-                Ok(ctx) => ctx,
+                Ok(server) => server,
                 Err(err) => {
                     eprintln!("g-server: failed initializing server `{}`: {}", #server_name, err);
                     return;
                 },
             };
+            app_contexts.push(std::sync::Arc::new((#name).app_context.clone()));
         }
     });
 
@@ -138,36 +139,39 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             let #listener =
                 g_server::tokio::net::TcpListener::bind(
                     (
-                        #name.0.ip_address,
-                        #name.0.port
+                        #name.ip_address,
+                        #name.port
                     )
                 )
                 .await
                 .expect(
                     format!(
                         "failed creating {} tcp listener",
-                        #name.0.name
+                        #name.name
                     )
                     .as_str()
                 );
 
             println!(
                 "g-server: running {} on {}:{}...",
-                #name.0.name,
-                #name.0.ip_address,
-                #name.0.port
+                #name.name,
+                #name.ip_address,
+                #name.port
             );
         }
     });
 
     let mut is_graceful = false;
     // graceful shutdown cancellation token
-    let grace_shutdown_canc_token: TokenStream2 = if servers.iter().any(|s| {
-        s.body.config.iter().any(|cfg| {
+    let grace_shutdown_canc_token: TokenStream2 = if let Some(grace_cfg) = servers
+        .iter()
+        .flat_map(|s| s.body.config.iter())
+        .find(|cfg| {
             cfg.name.to_string() == crate::config::CONFIG_FIELD_GRACEFUL_SHUTDOWN
-                && crate::extract_bool(&cfg.value)
+                && crate::is_graceful_shutdown_enable(&cfg.value)
         })
-    }) {
+        .map(|cfg| &cfg.value)
+    {
         is_graceful = true;
 
         let tls_grace_handle = if servers.iter().any(|srv| {
@@ -227,9 +231,15 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     println!("shutting down...");
                     #tls_grace_handle_shutdown
 
-                    g_server::tokio::time::sleep(g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT).await;
-                    println!("g-server: drain timeout reached, forcing exit");
-                    std::process::exit(1);
+                    g_server::tokio::select! {
+                        _ = (#grace_cfg).clean_up(app_contexts.clone()) => {
+                            println!("g-server: cleanup completed");
+                        }
+                        _ = g_server::tokio::time::sleep(g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT) => {
+                            println!("g-server: drain timeout reached, forcing exit");
+                            std::process::exit(1);
+                        }
+                    }
                 });
             }
         }
@@ -253,10 +263,10 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                 let config_factory = quote! {
                     let #tls_config_name = if (#tls_config_value).client_cas.is_some() {
                         (#tls_config_value).mtls_config()
-                            .expect(format!("g-server: failed reading and creating mtls config for {}", #name.0.name).as_str())
+                            .expect(format!("g-server: failed reading and creating mtls config for {}", #name.name).as_str())
                     } else {
                         (#tls_config_value).tls_config().await
-                            .expect(format!("g-server: failed reading and creating tls config for {}", #name.0.name).as_str())
+                            .expect(format!("g-server: failed reading and creating tls config for {}", #name.name).as_str())
                     };
                 };
                 let host = server.ip.value();
@@ -277,9 +287,9 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     println!(
                         "g-server({}): running {} on {}:{}...",
                         running_msg,
-                        #name.0.name,
-                        #name.0.ip_address,
-                        #name.0.port
+                        #name.name,
+                        #name.ip_address,
+                        #name.port
                     );
                 });
             }
@@ -307,7 +317,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             return quote! {
                 g_server::axum::serve(
                     #listener,
-                    #name.1.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                    #name.router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
                 ).with_graceful_shutdown(shutdown.clone().cancelled_owned())
             };
         }
@@ -315,7 +325,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         quote! {
             g_server::axum::serve(
                 #listener,
-                #name.1.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                #name.router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
             )
         }
     });
@@ -419,6 +429,8 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     quote! {
         #[g_server::tokio::main(crate = "g_server::tokio")]
         async fn main() {
+            let mut app_contexts: Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>> = vec![];
+
             #(#initializers)*
 
             #(#listeners)*
@@ -906,14 +918,7 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
     };
 
     Ok(quote! {
-        pub async fn #init() -> std::result::Result<(g_server::Server, g_server::axum::Router<()>), String> {
-            let server =
-                g_server::Server {
-                    name: #name,
-                    ip_address: #ip,
-                    port: #port,
-                };
-
+        pub async fn #init() -> std::result::Result<g_server::Server<#context_type>, String> {
             // Override only fields explicitly supplied
             // by the user.
             #global_config
@@ -931,9 +936,17 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
 
             #prometheus_init
 
-            let router = router.with_state(context);
+            let router = router.with_state(context.clone());
 
-            Ok((server, router))
+            let server = g_server::Server {
+                name: #name,
+                ip_address: #ip,
+                port: #port,
+                router: router,
+                app_context: context,
+            };
+
+            Ok(server)
         }
     })
 }
@@ -2064,8 +2077,8 @@ fn generate_tls_server(name: &Ident, is_graceful: bool) -> TokenStream2 {
     let tls_server = quote! {
         g_server::axum_server::bind_rustls(
             std::net::SocketAddr::new(
-                #name.0.ip_address.parse().expect(format!("invalid ip address: {}", #name.0.ip_address).as_str()),
-                #name.0.port,
+                #name.ip_address.parse().expect(format!("invalid ip address: {}", #name.ip_address).as_str()),
+                #name.port,
             ),
             #tls_config_name.clone(),
         )
@@ -2073,11 +2086,11 @@ fn generate_tls_server(name: &Ident, is_graceful: bool) -> TokenStream2 {
 
     if is_graceful {
         return quote! {
-            #tls_server.handle(handle.clone()).serve(#name.1.into_make_service_with_connect_info::<std::net::SocketAddr>())
+            #tls_server.handle(handle.clone()).serve(#name.router.into_make_service_with_connect_info::<std::net::SocketAddr>())
         };
     }
 
     quote! {
-        #tls_server.serve(#name.1.into_make_service_with_connect_info::<std::net::SocketAddr>())
+        #tls_server.serve(#name.router.into_make_service_with_connect_info::<std::net::SocketAddr>())
     }
 }

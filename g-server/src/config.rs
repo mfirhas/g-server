@@ -9,6 +9,7 @@ use crate::tokio::time::Instant;
 
 use crate::HeaderMap;
 use crate::axum::response::IntoResponse;
+use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -30,7 +31,7 @@ pub struct Config<RLKey = ()> {
     /// Remove repeated slash(es)
     pub normalize_endpoint: Option<bool>,
     /// toggle graceful shutdown
-    pub graceful_shutdown: Option<bool>,
+    pub graceful_shutdown: Option<GracefulShutdown>,
 
     /// Logging config
     pub logging: Option<Logging>,
@@ -106,6 +107,29 @@ impl Config {
             logging: self.logging,
             tracing: self.tracing,
             metrics: self.metrics,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GracefulShutdown {
+    pub enable: bool,
+    pub cleanup_fns: &'static [fn(
+        Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    ) -> std::pin::Pin<
+        std::boxed::Box<dyn std::future::Future<Output = ()> + Send>,
+    >],
+}
+
+impl GracefulShutdown {
+    pub async fn clean_up(
+        &self,
+        app_contexts: Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    ) {
+        if self.enable {
+            for func in self.cleanup_fns {
+                func(app_contexts.clone()).await;
+            }
         }
     }
 }
@@ -666,7 +690,7 @@ pub struct Logging {
     pub init_fn: fn(
         LoggerInitParams,
     ) -> std::pin::Pin<
-        std::boxed::Box<dyn std::future::Future<Output = Result<(), String>>>,
+        std::boxed::Box<dyn std::future::Future<Output = Result<(), String>> + Send>,
     >,
 }
 

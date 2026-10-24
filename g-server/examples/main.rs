@@ -209,13 +209,7 @@ async fn shutdown_signal() {
 }
 
 // function name comes from `__init_<server_name>`
-pub fn __init_app_a() -> (Server, axum::Router<()>) {
-    let server = Server {
-        name: "app_a",         // from server name
-        ip_address: "0.0.0.0", // from server ip address
-        port: 42069,           // from server port
-    };
-
+pub fn __init_app_a() -> (Server<Context>, axum::Router<()>) {
     let mut global_config = Config::empty();
     global_config.timeout = Some(100);
     // if user supply any config, we define them here:
@@ -237,8 +231,15 @@ pub fn __init_app_a() -> (Server, axum::Router<()>) {
     // config middlewares, we define them if they're not None.
     router = __register_global_middlewares(&global_config, router);
 
-    let router = router.with_state(context);
+    let router = router.with_state(context.clone());
 
+    let server = Server {
+        name: "app_a",         // from server name
+        ip_address: "0.0.0.0", // from server ip address
+        port: 42069,           // from server port
+        app_context: context,
+        router: router.clone(),
+    };
     (server, router)
 }
 
