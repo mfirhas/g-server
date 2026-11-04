@@ -148,7 +148,7 @@ impl GracefulShutdown {
                 println!("g-server: cleanup completed");
             }
             _ = crate::tokio::time::sleep(grace_shutdown_timeout) => {
-                println!("g-server: drain timeout reached, forcing exit");
+                println!("g-server: graceful shutdown timeout reached, forcing exit...");
                 // #EXIT
                 std::process::exit(1);
             }
@@ -198,7 +198,7 @@ impl GracefulShutdown {
                 println!("g-server: cleanup with otel completed");
             }
             _ = crate::tokio::time::sleep(grace_shutdown_timeout) => {
-                println!("g-server: graceful shutdown timeout reached, forcing exit");
+                println!("g-server: graceful shutdown(with otel) timeout reached, forcing exit...");
                 // #EXIT
                 std::process::exit(1);
             }
@@ -787,7 +787,9 @@ impl Logging {
     ) -> Result<Option<crate::opentelemetry_sdk::logs::SdkLoggerProvider>, String> {
         use crate::opentelemetry::KeyValue;
         use crate::opentelemetry_appender_log::OpenTelemetryLogBridge;
-        use crate::opentelemetry_otlp::{self, WithExportConfig, WithHttpConfig, WithTonicConfig};
+        use crate::opentelemetry_otlp::{
+            self, RetryPolicy, WithExportConfig, WithHttpConfig, WithTonicConfig,
+        };
         use crate::opentelemetry_sdk::{
             self, Resource,
             logs::{BatchConfigBuilder, SdkLoggerProvider},
@@ -803,6 +805,12 @@ impl Logging {
 
         println!("g-server: initializing OTel logging...");
 
+        let retry_policy = RetryPolicy::default()
+            .with_max_retries(config.retry.max_retry as usize)
+            .with_initial_delay(config.retry.initial_delay)
+            .with_max_delay(config.retry.max_delay)
+            .with_max_jitter(config.retry.max_jitter);
+
         // Build the OTLP log exporter.
         let exporter = match config.transport {
             OTelTransport::Http => {
@@ -816,7 +824,10 @@ impl Logging {
                     builder = builder.with_headers(headers.iter().cloned().collect());
                 }
 
-                builder.with_timeout(config.export_timeout).build()
+                builder
+                    .with_timeout(config.export_timeout)
+                    .with_retry_policy(retry_policy)
+                    .build()
             }
 
             OTelTransport::Grpc => {
@@ -842,7 +853,10 @@ impl Logging {
                     builder = builder.with_metadata(metadata);
                 }
 
-                builder.with_timeout(config.export_timeout).build()
+                builder
+                    .with_timeout(config.export_timeout)
+                    .with_retry_policy(retry_policy)
+                    .build()
             }
         }
         .map_err(|err| format!("failed to build OTel log exporter: {err}"))?;
@@ -1220,7 +1234,9 @@ impl Tracing {
         otel_config: &Option<OTel>,
     ) -> Result<Option<crate::opentelemetry_sdk::trace::SdkTracerProvider>, String> {
         use crate::opentelemetry::{KeyValue, global, trace::TracerProvider};
-        use crate::opentelemetry_otlp::{self, WithExportConfig, WithHttpConfig, WithTonicConfig};
+        use crate::opentelemetry_otlp::{
+            self, RetryPolicy, WithExportConfig, WithHttpConfig, WithTonicConfig,
+        };
         use crate::opentelemetry_sdk::{
             Resource,
             propagation::TraceContextPropagator,
@@ -1241,6 +1257,12 @@ impl Tracing {
 
         println!("g-server: initializing OTel tracing...");
 
+        let retry_policy = RetryPolicy::default()
+            .with_max_retries(config.retry.max_retry as usize)
+            .with_initial_delay(config.retry.initial_delay)
+            .with_max_delay(config.retry.max_delay)
+            .with_max_jitter(config.retry.max_jitter);
+
         // Build the OTLP span exporter.
         let exporter = match &config.transport {
             OTelTransport::Http => {
@@ -1254,7 +1276,10 @@ impl Tracing {
                     builder = builder.with_headers(headers.iter().cloned().collect());
                 }
 
-                builder.with_timeout(config.export_timeout).build()
+                builder
+                    .with_timeout(config.export_timeout)
+                    .with_retry_policy(retry_policy)
+                    .build()
             }
 
             OTelTransport::Grpc => {
@@ -1280,7 +1305,10 @@ impl Tracing {
                     builder = builder.with_metadata(metadata);
                 }
 
-                builder.with_timeout(config.export_timeout).build()
+                builder
+                    .with_timeout(config.export_timeout)
+                    .with_retry_policy(retry_policy)
+                    .build()
             }
         }
         .map_err(|err| format!("failed to build OTel span exporter: {err}"))?;
@@ -1657,8 +1685,8 @@ impl Metrics {
         use crate::metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder};
         use crate::opentelemetry::{KeyValue, metrics::MeterProvider as _};
         use crate::opentelemetry_otlp::{
-            MetricExporter, Protocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
-            tonic_types::metadata::MetadataMap,
+            MetricExporter, Protocol, RetryPolicy, WithExportConfig, WithHttpConfig,
+            WithTonicConfig, tonic_types::metadata::MetadataMap,
         };
         use crate::opentelemetry_sdk::{
             Resource,
@@ -1685,13 +1713,20 @@ impl Metrics {
             Temporality::Delta => SdkTemporality::Delta,
         };
 
+        let retry_policy = RetryPolicy::default()
+            .with_max_retries(config.retry.max_retry as usize)
+            .with_initial_delay(config.retry.initial_delay)
+            .with_max_delay(config.retry.max_delay)
+            .with_max_jitter(config.retry.max_jitter);
+
         // ---- Exporter -------------------------------------------------------
         let exporter = match config.transport {
             OTelTransport::Grpc => {
                 let mut b = MetricExporter::builder()
                     .with_tonic()
                     .with_temporality(temporality)
-                    .with_timeout(config.export_timeout);
+                    .with_timeout(config.export_timeout)
+                    .with_retry_policy(retry_policy);
 
                 if let Some(ep) = m.endpoint {
                     b = b.with_endpoint(ep);
@@ -1716,7 +1751,8 @@ impl Metrics {
                     .with_http()
                     .with_protocol(Protocol::HttpBinary)
                     .with_temporality(temporality)
-                    .with_timeout(config.export_timeout);
+                    .with_timeout(config.export_timeout)
+                    .with_retry_policy(retry_policy);
 
                 if let Some(ep) = m.endpoint {
                     b = b.with_endpoint(ep);
@@ -2286,6 +2322,9 @@ pub struct OTel {
     /// Transport protocol for export
     pub transport: OTelTransport,
 
+    /// retry config
+    pub retry: OTelRetry,
+
     /// Timeout for flush operation before shutting down
     pub flush_timeout: Duration,
 }
@@ -2308,6 +2347,7 @@ impl Default for OTel {
             max_queue_size: 2048,
             max_export_batch_size: 512,
             transport: OTelTransport::default(),
+            retry: OTelRetry::default(),
             flush_timeout: Duration::from_millis(10_000),
         }
     }
@@ -2404,6 +2444,26 @@ impl Default for BucketHistogram {
         Self {
             boundaries: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5],
             record_min_max: true,
+        }
+    }
+}
+
+// otel retry
+#[derive(Debug, Clone)]
+pub struct OTelRetry {
+    pub max_retry: u8,
+    pub initial_delay: Duration,
+    pub max_delay: Duration,
+    pub max_jitter: Duration,
+}
+
+impl Default for OTelRetry {
+    fn default() -> Self {
+        Self {
+            max_retry: 3,
+            initial_delay: Duration::from_millis(50),
+            max_delay: Duration::from_millis(500),
+            max_jitter: Duration::from_millis(100),
         }
     }
 }
