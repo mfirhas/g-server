@@ -1719,12 +1719,6 @@ impl Metrics {
                     .with_timeout(config.export_timeout);
 
                 if let Some(ep) = m.endpoint {
-                    // Programmatic endpoints are used as-is for HTTP, so add the signal path.
-                    let ep = if ep.ends_with("/v1/metrics") {
-                        ep.to_string()
-                    } else {
-                        format!("{}/v1/metrics", ep.trim_end_matches('/'))
-                    };
                     b = b.with_endpoint(ep);
                 }
 
