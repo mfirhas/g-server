@@ -1657,21 +1657,6 @@ pub(crate) fn parse_otel(_ident: &Ident, input: ParseStream<'_>) -> Result<Expr>
             "tracing" => parse_otel_tracing(&content)?,
             "metrics" => parse_otel_metrics(&content)?,
 
-            "transport" => {
-                let transport: Ident = content.parse()?;
-
-                match transport.to_string().as_str() {
-                    "http" => syn::parse_quote!(g_server::config::OTelTransport::Http),
-                    "grpc" => syn::parse_quote!(g_server::config::OTelTransport::Grpc),
-                    _ => {
-                        return Err(syn::Error::new(
-                            transport.span(),
-                            "invalid OTel transport, expected: http or grpc",
-                        ));
-                    }
-                }
-            }
-
             _ => {
                 return Err(syn::Error::new(field.span(), "invalid OTel config field"));
             }
@@ -1711,6 +1696,20 @@ fn parse_otel_logging(input: ParseStream<'_>) -> Result<Expr> {
             "endpoint" => {
                 let endpoint: Expr = content.parse()?;
                 syn::parse_quote!(Some(#endpoint))
+            }
+            "transport" => {
+                let transport: Ident = content.parse()?;
+
+                match transport.to_string().as_str() {
+                    "http" => syn::parse_quote!(g_server::config::OTelTransport::Http),
+                    "grpc" => syn::parse_quote!(g_server::config::OTelTransport::Grpc),
+                    _ => {
+                        return Err(syn::Error::new(
+                            transport.span(),
+                            "invalid OTel transport, expected: http or grpc",
+                        ));
+                    }
+                }
             }
             _ => {
                 return Err(syn::Error::new(
@@ -1757,6 +1756,20 @@ fn parse_otel_tracing(input: ParseStream<'_>) -> Result<Expr> {
             }
             "sampling_strategy" => parse_otel_sampling_strategy(&content)?,
             "distributed" => content.parse::<Expr>()?,
+            "transport" => {
+                let transport: Ident = content.parse()?;
+
+                match transport.to_string().as_str() {
+                    "http" => syn::parse_quote!(g_server::config::OTelTransport::Http),
+                    "grpc" => syn::parse_quote!(g_server::config::OTelTransport::Grpc),
+                    _ => {
+                        return Err(syn::Error::new(
+                            transport.span(),
+                            "invalid OTel transport, expected: http or grpc",
+                        ));
+                    }
+                }
+            }
             _ => {
                 return Err(syn::Error::new(
                     field.span(),
@@ -1819,6 +1832,20 @@ fn parse_otel_metrics(input: ParseStream<'_>) -> Result<Expr> {
                 }
             }
             "aggregation" => parse_otel_metrics_aggregation(&content)?,
+            "transport" => {
+                let transport: Ident = content.parse()?;
+
+                match transport.to_string().as_str() {
+                    "http" => syn::parse_quote!(g_server::config::OTelTransport::Http),
+                    "grpc" => syn::parse_quote!(g_server::config::OTelTransport::Grpc),
+                    _ => {
+                        return Err(syn::Error::new(
+                            transport.span(),
+                            "invalid OTel transport, expected: http or grpc",
+                        ));
+                    }
+                }
+            }
             _ => {
                 return Err(syn::Error::new(
                     field.span(),

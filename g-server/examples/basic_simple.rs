@@ -171,7 +171,11 @@ gserver! {
             }
             otel: {
                 enable: true
-                buffered: true
+                buffered: false
+                metrics: {
+                    endpoint: "http://localhost:9090/api/v1/otlp/v1/metrics"
+                    transport: http
+                }
             }
             request_id: {
                 header: HDR,

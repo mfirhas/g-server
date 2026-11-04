@@ -819,7 +819,7 @@ impl Logging {
             .with_max_jitter(config.retry.max_jitter);
 
         // Build the OTLP log exporter.
-        let exporter = match config.transport {
+        let exporter = match config.logging.transport {
             OTelTransport::Http => {
                 let mut builder = opentelemetry_otlp::LogExporter::builder().with_http();
 
@@ -1278,7 +1278,7 @@ impl Tracing {
             .with_max_jitter(config.retry.max_jitter);
 
         // Build the OTLP span exporter.
-        let exporter = match &config.transport {
+        let exporter = match &config.tracing.transport {
             OTelTransport::Http => {
                 let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http();
 
@@ -1741,7 +1741,7 @@ impl Metrics {
             .with_max_jitter(config.retry.max_jitter);
 
         // ---- Exporter -------------------------------------------------------
-        let exporter = match config.transport {
+        let exporter = match config.metrics.transport {
             OTelTransport::Grpc => {
                 let mut b = MetricExporter::builder()
                     .with_tonic()
@@ -1843,6 +1843,9 @@ impl Metrics {
 
         // Optional: lets other OTel-native instrumentation share this provider.
         opentelemetry::global::set_meter_provider(provider.clone());
+
+        // init system metrics
+        self.init_system_metrics()?;
 
         Ok(Some(provider))
     }
@@ -2340,9 +2343,6 @@ pub struct OTel {
     pub max_queue_size: u32,
     pub max_export_batch_size: u32,
 
-    /// Transport protocol for export
-    pub transport: OTelTransport,
-
     /// retry config
     pub retry: OTelRetry,
 
@@ -2367,7 +2367,6 @@ impl Default for OTel {
             export_timeout: std::time::Duration::from_millis(5000),
             max_queue_size: 2048,
             max_export_batch_size: 512,
-            transport: OTelTransport::default(),
             retry: OTelRetry::default(),
             flush_timeout: Duration::from_millis(10_000),
         }
@@ -2396,6 +2395,8 @@ pub enum OTelTransport {
 pub struct OTelLogging {
     pub enable: bool,
     pub endpoint: Option<&'static str>,
+    /// Transport protocol for export
+    pub transport: OTelTransport,
 }
 
 impl Default for OTelLogging {
@@ -2403,6 +2404,7 @@ impl Default for OTelLogging {
         Self {
             enable: true,
             endpoint: None,
+            transport: OTelTransport::default(),
         }
     }
 }
@@ -2415,6 +2417,8 @@ pub struct OTelTracing {
     /// `true`: accept traceparent header, connecting multiple distributed traces.
     /// `false`: traces are isolated, no inbound, no outbound.
     pub distributed: bool,
+    /// Transport protocol for export
+    pub transport: OTelTransport,
 }
 
 impl Default for OTelTracing {
@@ -2424,6 +2428,7 @@ impl Default for OTelTracing {
             endpoint: None,
             sampling_strategy: OTelTracingSamplingStrategy::default(),
             distributed: true,
+            transport: OTelTransport::default(),
         }
     }
 }
@@ -2434,6 +2439,8 @@ pub struct OTelMetrics {
     pub endpoint: Option<&'static str>,
     pub temporality: Temporality,
     pub aggregation: Option<BucketHistogram>,
+    /// Transport protocol for export
+    pub transport: OTelTransport,
 }
 
 impl Default for OTelMetrics {
@@ -2443,6 +2450,7 @@ impl Default for OTelMetrics {
             endpoint: None,
             temporality: Temporality::default(),
             aggregation: None,
+            transport: OTelTransport::default(),
         }
     }
 }
