@@ -803,6 +803,13 @@ impl Logging {
             return Ok(None);
         }
 
+        if !config.buffered && config.logging.endpoint.is_none() {
+            println!(
+                "g-server: buffered is false and otel logging endpoint is none, ignoring logging otel initialization..."
+            );
+            return Ok(None);
+        }
+
         println!("g-server: initializing OTel logging...");
 
         let retry_policy = RetryPolicy::default()
@@ -1255,6 +1262,13 @@ impl Tracing {
             return Ok(None);
         }
 
+        if !config.buffered && config.tracing.endpoint.is_none() {
+            println!(
+                "g-server: buffered is false and otel tracing endpoint is none, ignoring tracing otel initialization..."
+            );
+            return Ok(None);
+        }
+
         println!("g-server: initializing OTel tracing...");
 
         let retry_policy = RetryPolicy::default()
@@ -1701,6 +1715,13 @@ impl Metrics {
         };
 
         if !config.enable || !config.metrics.enable {
+            return Ok(None);
+        }
+
+        if !config.buffered && config.metrics.endpoint.is_none() {
+            println!(
+                "g-server: buffered is false and otel metrics endpoint is none, ignoring metrics otel initialization..."
+            );
             return Ok(None);
         }
 
