@@ -174,17 +174,17 @@ impl GracefulShutdown {
 
                 let res = crate::tokio::task::spawn_blocking(move || {
                     if let Some(p) = otel_logging_provider {
-                        if let Err(e) = p.shutdown_with_timeout(grace_shutdown_timeout) {
+                        if let Err(e) = p.shutdown() {
                             println!("g-server: otel logs shutdown error: {e:?}");
                         }
                     }
                     if let Some(p) = otel_tracing_provider {
-                        if let Err(e) = p.shutdown_with_timeout(grace_shutdown_timeout) {
+                        if let Err(e) = p.shutdown() {
                             println!("g-server: otel traces shutdown error: {e:?}");
                         }
                     }
                     if let Some(p) = otel_metrics_provider {
-                        if let Err(e) = p.shutdown_with_timeout(grace_shutdown_timeout) {
+                        if let Err(e) = p.shutdown() {
                             println!("g-server: otel metrics shutdown error: {e:?}");
                         }
                     }
@@ -198,8 +198,8 @@ impl GracefulShutdown {
                 println!("g-server: cleanup with otel completed");
             }
             _ = crate::tokio::time::sleep(grace_shutdown_timeout) => {
-                println!("g-server: drain timeout reached, forcing exit");
-                // # EXIT
+                println!("g-server: graceful shutdown timeout reached, forcing exit");
+                // #EXIT
                 std::process::exit(1);
             }
         }
