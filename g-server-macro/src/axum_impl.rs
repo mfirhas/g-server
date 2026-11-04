@@ -183,7 +183,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             (
                 quote! { let handle = g_server::axum_server::Handle::new(); },
                 quote! { let handle = handle.clone(); },
-                quote! { handle.graceful_shutdown(Some(g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT)); },
+                quote! { handle.graceful_shutdown(Some((#grace_cfg).timeout)); },
             )
         } else {
             (quote! {}, quote! {}, quote! {})
@@ -191,6 +191,76 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         let tls_grace_handle_init = tls_grace_handle.0;
         let tls_grace_handle_clone = tls_grace_handle.1;
         let tls_grace_handle_shutdown = tls_grace_handle.2;
+
+        #[cfg(feature = "otel")]
+        let graceful_shutdown_handler = {
+            let graceful_shutdown_handler = if let Some(otel_config) =
+                servers.iter().find_map(|server| {
+                    server
+                        .body
+                        .config
+                        .iter()
+                        .find(|config| config.name == crate::config::CONFIG_FIELD_OTEL)
+                }) {
+                let otel_cfg_val = &otel_config.value;
+                #[cfg(feature = "metrics")]
+                {
+                    quote! {
+                        #[cfg(all(feature = "otel", feature = "metrics"))]
+                        {
+                            (#grace_cfg).graceful_shutdown_with_otel(
+                                app_contexts.clone(),
+                                (#otel_cfg_val).flush_timeout,
+                                logging_otel_provider,
+                                tracing_otel_provider,
+                                metrics_otel_provider,
+                            ).await;
+                        }
+                    }
+                }
+
+                #[cfg(not(feature = "metrics"))]
+                {
+                    quote! {
+                        #[cfg(all(feature = "otel", not(feature = "metrics")))]
+                        {
+                            (#grace_cfg).graceful_shutdown_with_otel(
+                                app_contexts.clone(),
+                                (#otel_cfg_val).flush_timeout,
+                                logging_otel_provider,
+                                tracing_otel_provider,
+                                None,
+                            ).await;
+                        }
+                    }
+                }
+            } else {
+                quote! {
+                    #[cfg(any(feature = "otel", feature = "metrics"))]
+                    {
+                        (#grace_cfg).graceful_shutdown_with_otel(
+                            app_contexts.clone(),
+                            ((#grace_cfg).timeout),
+                            None, None, None,
+                        ).await;
+                    }
+                }
+            };
+
+            graceful_shutdown_handler
+        };
+
+        #[cfg(not(feature = "otel"))]
+        let graceful_shutdown_handler = {
+            let graceful_shutdown_handler = quote! {
+                #[cfg(not(feature = "otel"))]
+                {
+                    (#grace_cfg).graceful_shutdown(app_contexts.clone()).await;
+                }
+            };
+
+            graceful_shutdown_handler
+        };
 
         quote! {
             let shutdown_signal = async || {
@@ -231,15 +301,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     println!("shutting down...");
                     #tls_grace_handle_shutdown
 
-                    g_server::tokio::select! {
-                        _ = (#grace_cfg).clean_up(app_contexts.clone()) => {
-                            println!("g-server: cleanup completed");
-                        }
-                        _ = g_server::tokio::time::sleep(g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT) => {
-                            println!("g-server: drain timeout reached, forcing exit");
-                            std::process::exit(1);
-                        }
-                    }
+                    #graceful_shutdown_handler
                 });
             }
         }
@@ -350,34 +412,62 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
             });
 
-            match trace_log {
-                Some(tracing_config) => {
-                    let trace_log = &tracing_config.value;
+            #[cfg(feature = "otel")]
+            {
+                let otel_config = servers.iter().find_map(|server| {
+                    server
+                        .body
+                        .config
+                        .iter()
+                        .find(|config| config.name == crate::config::CONFIG_FIELD_OTEL)
+                });
+                match (trace_log, otel_config) {
+                    (Some(tracing_cfg), Some(otel_cfg)) => {
+                        let tracing_cfg_val = &tracing_cfg.value;
+                        let otel_cfg_val = &otel_cfg.value;
+                        quote! {
+                            if !(#tracing_cfg_val).trace_log && (!(#otel_cfg_val).enable || !(#otel_cfg_val).logging.enable) {
+                                (#logging_config).init(&Some(#tracing_cfg_val)).await.expect("g-server: failed initializing logging(with tracelog)");
+                            }
+                        }
+                    },
+                    (Some(tracing_cfg), None) => {
+                        let tracing_cfg_val = &tracing_cfg.value;
+                        quote! {
+                            if !(#tracing_cfg_val).trace_log {
+                                (#logging_config).init(&Some(#tracing_cfg_val)).await.expect("g-server: failed initializing logging(with tracelog)");
+                            }
+                        }
+                    },
+                    (None, Some(otel_cfg)) => {
+                        let otel_cfg_val = &otel_cfg.value;
+                        quote! {
+                            if !(#otel_cfg_val).enable || !(#otel_cfg_val).logging.enable {
+                                (#logging_config).init(&None).await.expect("g-server: failed initializing logging");
+                            }
+                        }
+                    },
+                    (None, None) => quote! {
+                        (#logging_config).init(&None).await.expect("g-server: failed initializing logging");
+                    },
+                }
+            }
 
-                    quote! {
-                        if !(#trace_log).trace_log {
-                            match (#logging_config).init(&Some(#trace_log)).await {
-                                Ok(()) => {},
-                                Err(err) => {
-                                    panic!(
-                                        "g-server: failed initializing logging(outside tracing): {}",
-                                        err
-                                    );
-                                }
+            #[cfg(not(feature = "otel"))]
+            {
+                match trace_log {
+                    Some(tracing_config) => {
+                        let trace_log = &tracing_config.value;
+
+                        quote! {
+                            if !(#trace_log).trace_log {
+                                (#logging_config).init(&Some(#trace_log)).await.expect("g-server: failed initializing logging(with tracelog)");
                             }
                         }
                     }
-                }
-                None => {
-                    quote! {
-                        match (#logging_config).init(&None).await {
-                            Ok(()) => {},
-                            Err(err) => {
-                                panic!(
-                                    "g-server: failed initializing logging: {}",
-                                    err
-                                );
-                            }
+                    None => {
+                        quote! {
+                            (#logging_config).init(&None).await.expect("g-server: failed initializing logging");
                         }
                     }
                 }
@@ -393,12 +483,34 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
     }) {
         let tracing_config = &config.value;
-        quote! {
-            {
-                match (#tracing_config).init() {
-                    Ok(()) => {},
-                    Err(err) => panic!("g-server: failed initializing tracing: {}", err),
+
+        #[cfg(feature = "otel")]
+        {
+            let otel_config = servers.iter().find_map(|server| {
+                server
+                    .body
+                    .config
+                    .iter()
+                    .find(|config| config.name == crate::config::CONFIG_FIELD_OTEL)
+            });
+            if let Some(otel_cfg) = otel_config {
+                let otel_cfg_val = &otel_cfg.value;
+                quote! {
+                    if !(#otel_cfg_val).enable || !(#otel_cfg_val).tracing.enable {
+                        (#tracing_config).init().expect("g-server: failed initializing tracing");
+                    }
                 }
+            } else {
+                quote! {
+                    (#tracing_config).init().expect("g-server: failed initializing tracing");
+                }
+            }
+        }
+
+        #[cfg(not(feature = "otel"))]
+        {
+            quote! {
+                (#tracing_config).init().expect("g-server: failed initializing tracing");
             }
         }
     } else {
@@ -413,14 +525,132 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             .find(|config| config.name == crate::config::CONFIG_FIELD_METRICS)
     }) {
         let metrics_config = &config.value;
-        quote! {
-            #[cfg(feature = "metrics")]
-            {
-                match (#metrics_config).init() {
-                    Ok(()) => {},
-                    Err(err) => panic!("g-server: failed initializing metrics: {}", err),
+
+        #[cfg(all(feature = "metrics", feature = "otel"))]
+        {
+            let otel_config = servers.iter().find_map(|server| {
+                server
+                    .body
+                    .config
+                    .iter()
+                    .find(|config| config.name == crate::config::CONFIG_FIELD_OTEL)
+            });
+            if let Some(otel_cfg) = otel_config {
+                let otel_cfg_val = &otel_cfg.value;
+                quote! {
+                    if !(#otel_cfg_val).enable || !(#otel_cfg_val).metrics.enable {
+                        (#metrics_config).init().await.expect("g-server: failed initializing metrics");
+                    }
+                }
+            } else {
+                quote! {
+                    (#metrics_config).init().await.expect("g-server: failed initializing metrics");
                 }
             }
+        }
+
+        #[cfg(all(feature = "metrics", not(feature = "otel")))]
+        {
+            quote! {
+                (#metrics_config).init().await.expect("g-server: failed initializing metrics");
+            }
+        }
+
+        #[cfg(not(any(feature = "metrics", feature = "otel")))]
+        {
+            quote! {}
+        }
+    } else {
+        quote! {}
+    };
+
+    let otel_init = if let Some(otel_config) = servers.iter().find_map(|server| {
+        server
+            .body
+            .config
+            .iter()
+            .find(|config| config.name == crate::config::CONFIG_FIELD_OTEL)
+    }) {
+        let otel_cfg_val = &otel_config.value;
+        #[cfg(feature = "otel")]
+        {
+            // logging
+            let logging_otel_init = if let Some(logging_cfg) = servers.iter().find_map(|server| {
+                server
+                    .body
+                    .config
+                    .iter()
+                    .find(|config| config.name == crate::config::CONFIG_FIELD_LOGGING)
+            }) {
+                let logging_cfg_val = &logging_cfg.value;
+                quote! {
+                    let logging_otel_provider = (#logging_cfg_val).init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing logging otel");
+                }
+            } else {
+                quote! {
+                    let logging_otel_provider = g_server::config::Logging::default().init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing logging otel");
+                }
+            };
+            // tracing
+            let tracing_otel_init = if let Some(tracing_cfg) = servers.iter().find_map(|server| {
+                server
+                    .body
+                    .config
+                    .iter()
+                    .find(|config| config.name == crate::config::CONFIG_FIELD_TRACING)
+            }) {
+                let tracing_cfg_val = &tracing_cfg.value;
+                quote! {
+                    let tracing_otel_provider = (#tracing_cfg_val).init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing tracing otel");
+                }
+            } else {
+                quote! {
+                    let tracing_otel_provider = g_server::config::Tracing::default().init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing tracing otel");
+                }
+            };
+            // metrics
+            #[cfg(feature = "metrics")]
+            {
+                let metrics_otel_init = if let Some(metrics_cfg) =
+                    servers.iter().find_map(|server| {
+                        server
+                            .body
+                            .config
+                            .iter()
+                            .find(|config| config.name == crate::config::CONFIG_FIELD_METRICS)
+                    }) {
+                    let metrics_cfg_val = &metrics_cfg.value;
+                    quote! {
+                        if let Some(prome) = (#metrics_cfg_val).prometheus && prome.enable && (#otel_cfg_val).enable && (#otel_cfg_val).metrics.enable {
+                            panic!("g-server: cannot have metrics otel and metrics prometheus enabled at the same time");
+                        }
+                        let metrics_otel_provider = (#metrics_cfg_val).init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing metrics otel");
+                    }
+                } else {
+                    quote! {
+                        let metrics_otel_provider = g_server::config::Metrics::default().init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing metrics otel");
+                    }
+                };
+
+                quote! {
+                    #logging_otel_init
+                    #tracing_otel_init
+                    #metrics_otel_init
+                }
+            }
+
+            #[cfg(not(feature = "metrics"))]
+            {
+                quote! {
+                    #logging_otel_init
+                    #tracing_otel_init
+                }
+            }
+        }
+
+        #[cfg(not(feature = "otel"))]
+        {
+            quote! {}
         }
     } else {
         quote! {}
@@ -438,6 +668,8 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             #logging_init
             #tracing_init
             #metrics_init
+
+            #otel_init
 
             #grace_shutdown_canc_token
 
@@ -476,17 +708,27 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
             }
 
             if let Some(ref tracing_cfg) = global_config.tracing {
+                #[cfg(feature = "otel")]
+                let distributed_tracing_enable = if let Some(ref otel_cfg) = global_config.otel {
+                    otel_cfg.tracing.distributed
+                } else {
+                    false
+                };
+
+                #[cfg(not(feature = "otel"))]
+                let distributed_tracing_enable = false;
+
                 if let Some(ref req_id) = global_config.request_id {
                     router = router.layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
+                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone()), distributed_tracing_enable),
                             g_server::config::Tracing::tracing_middleware,
                         )
                     )
                 } else {
                     router = router.layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), None),
+                            (tracing_cfg.correlation_id.clone(), None, distributed_tracing_enable),
                             g_server::config::Tracing::tracing_middleware,
                         )
                     )
@@ -645,17 +887,27 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
             }
 
             if let Some(ref tracing_cfg) = config.tracing {
+                #[cfg(feature = "otel")]
+                let distributed_tracing_enable = if let Some(ref otel_cfg) = config.otel {
+                    otel_cfg.tracing.distributed
+                } else {
+                    false
+                };
+
+                #[cfg(not(feature = "otel"))]
+                let distributed_tracing_enable = false;
+
                 if let Some(ref req_id) = config.request_id {
                     router = router.route_layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone())),
+                            (tracing_cfg.correlation_id.clone(), Some(req_id.header.clone()), distributed_tracing_enable),
                             g_server::config::Tracing::tracing_middleware,
                         )
                     )
                 } else {
                     router = router.route_layer(
                         g_server::axum::middleware::from_fn_with_state(
-                            (tracing_cfg.correlation_id.clone(), None),
+                            (tracing_cfg.correlation_id.clone(), None, distributed_tracing_enable),
                             g_server::config::Tracing::tracing_middleware,
                         )
                     )

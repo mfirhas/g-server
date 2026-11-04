@@ -166,8 +166,12 @@ gserver! {
                     network_received: {},
                     network_sent: {},
                 },
-                app: {enable:false},
-                prometheus: {},
+                app: {enable:true},
+                // prometheus: {},
+            }
+            otel: {
+                enable: true
+                buffered: true
             }
             request_id: {
                 header: HDR,
@@ -197,20 +201,20 @@ gserver! {
             }
 
             // self-signed
-            tls: {
-                cert: "g-server/examples/tls/cert.pem",
-                key: "g-server/examples/tls/key.pem",
-                // redirect_from: 42269,
-                /* Test with:
-                *  curl --cacert g-server/examples/tls/cert.pem \
-                *       --cert g-server/examples/mtls/allowed_clients/client-cert.pem \
-                *       --key g-server/examples/mtls/allowed_clients/client-key.pem \
-                *       https://localhost:42069/ping
-                */
-                // client_cas: [
-                //     "g-server/examples/mtls/allowed_clients/client-ca.pem"
-                // ]
-            }
+            // tls: {
+            //     cert: "g-server/examples/tls/cert.pem",
+            //     key: "g-server/examples/tls/key.pem",
+            //     // redirect_from: 42269,
+            //     /* Test with:
+            //     *  curl --cacert g-server/examples/tls/cert.pem \
+            //     *       --cert g-server/examples/mtls/allowed_clients/client-cert.pem \
+            //     *       --key g-server/examples/mtls/allowed_clients/client-key.pem \
+            //     *       https://localhost:42069/ping
+            //     */
+            //     // client_cas: [
+            //     //     "g-server/examples/mtls/allowed_clients/client-ca.pem"
+            //     // ]
+            // }
             panic_error: text((StatusCode::INTERNAL_SERVER_ERROR, BadReq("panic!*@()".into())))
         }
 

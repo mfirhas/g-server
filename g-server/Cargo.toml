@@ -30,6 +30,16 @@ embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
 tls = ["dep:axum-server", "dep:rustls", "dep:rustls-pemfile", "g-server-macro/tls"]
 metrics = ["dep:metrics", "dep:sysinfo", "g-server-macro/metrics"]
 prometheus = ["dep:metrics-exporter-prometheus", "g-server-macro/prometheus"]
+otel = [
+  "dep:opentelemetry",
+  "dep:opentelemetry_sdk",
+  "dep:opentelemetry-otlp",
+  "dep:opentelemetry-http",
+  "dep:opentelemetry-appender-log",
+  "dep:tracing-opentelemetry",
+  "dep:metrics-opentelemetry",
+  "g-server-macro/otel",
+]
 
 [dependencies]
 g-server-macro = { path = "../g-server-macro" }
@@ -46,6 +56,7 @@ serde_urlencoded = "0.7"
 uuid = { version = "1.27", features = ["fast-rng", "v4", "v7"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tower_governor = "0.8"
+tonic = { version = "0.14", default-features = false }
 log = { version = "0.4", features = ["kv"] }
 env_logger = "0.11"
 tracing = "0.1"
@@ -60,6 +71,15 @@ rustls-pemfile = { version = "2", optional = true }
 metrics = { version = "0.24", optional = true }
 sysinfo = { version = "0.39", optional = true }
 metrics-exporter-prometheus = { version = "0.17", optional = true }
+
+# otel
+opentelemetry = { version = "0.33", optional = true }
+opentelemetry_sdk = { version = "0.33", features = ["logs"], optional = true }
+opentelemetry-otlp = { version = "0.33", features = ["logs", "http-proto", "grpc-tonic"], optional = true }
+opentelemetry-http = { version = "0.33", optional = true }
+opentelemetry-appender-log = { version = "0.33", optional = true }
+tracing-opentelemetry = { version = "0.34", optional = true }
+metrics-opentelemetry = { version = "0.24033.1", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }

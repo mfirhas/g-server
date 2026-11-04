@@ -9,13 +9,13 @@ use crate::tokio::time::Instant;
 
 use crate::HeaderMap;
 use crate::axum::response::IntoResponse;
-use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
+use std::time::Duration;
 
-pub const GRACEFUL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+pub const GRACEFUL_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(10_000);
 
 /// Server's config
 #[derive(Debug, Default)]
@@ -41,6 +41,9 @@ pub struct Config<RLKey = ()> {
 
     /// Metrics config
     pub metrics: Option<Metrics>,
+
+    /// Open Telemetry config
+    pub otel: Option<OTel>,
 
     /// TLS config
     pub tls: Option<Tls>,
@@ -107,6 +110,7 @@ impl Config {
             logging: self.logging,
             tracing: self.tracing,
             metrics: self.metrics,
+            otel: self.otel,
         }
     }
 }
@@ -114,6 +118,7 @@ impl Config {
 #[derive(Debug, Clone, Copy)]
 pub struct GracefulShutdown {
     pub enable: bool,
+    pub timeout: Duration,
     pub cleanup_fns: &'static [fn(
         Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     ) -> std::pin::Pin<
@@ -122,13 +127,80 @@ pub struct GracefulShutdown {
 }
 
 impl GracefulShutdown {
-    pub async fn clean_up(
-        &self,
-        app_contexts: Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
-    ) {
+    async fn clean_up(&self, app_contexts: Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>) {
         if self.enable {
             for func in self.cleanup_fns {
                 func(app_contexts.clone()).await;
+            }
+        }
+    }
+
+    pub async fn graceful_shutdown(
+        &self,
+        app_contexts: Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    ) {
+        println!("g-server: starting graceful shutdown...");
+
+        let grace_shutdown_timeout = self.timeout;
+
+        crate::tokio::select! {
+            _ = self.clean_up(app_contexts) => {
+                println!("g-server: cleanup completed");
+            }
+            _ = crate::tokio::time::sleep(grace_shutdown_timeout) => {
+                println!("g-server: drain timeout reached, forcing exit");
+                // #EXIT
+                std::process::exit(1);
+            }
+        }
+    }
+
+    #[cfg(feature = "otel")]
+    pub async fn graceful_shutdown_with_otel(
+        &self,
+        app_contexts: Vec<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+        otel_flush_timeout: Duration,
+        otel_logging_provider: Option<crate::opentelemetry_sdk::logs::SdkLoggerProvider>,
+        otel_tracing_provider: Option<crate::opentelemetry_sdk::trace::SdkTracerProvider>,
+        otel_metrics_provider: Option<crate::opentelemetry_sdk::metrics::SdkMeterProvider>,
+    ) {
+        println!("g-server: starting graceful shutdown with otel...");
+
+        let grace_shutdown_timeout = std::cmp::max(self.timeout, otel_flush_timeout);
+
+        crate::tokio::select! {
+            _ = async {
+                self.clean_up(app_contexts).await;
+
+                let res = crate::tokio::task::spawn_blocking(move || {
+                    if let Some(p) = otel_logging_provider {
+                        if let Err(e) = p.shutdown_with_timeout(grace_shutdown_timeout) {
+                            println!("g-server: otel logs shutdown error: {e:?}");
+                        }
+                    }
+                    if let Some(p) = otel_tracing_provider {
+                        if let Err(e) = p.shutdown_with_timeout(grace_shutdown_timeout) {
+                            println!("g-server: otel traces shutdown error: {e:?}");
+                        }
+                    }
+                    if let Some(p) = otel_metrics_provider {
+                        if let Err(e) = p.shutdown_with_timeout(grace_shutdown_timeout) {
+                            println!("g-server: otel metrics shutdown error: {e:?}");
+                        }
+                    }
+                })
+                .await;
+
+                if let Err(e) = res {
+                    println!("g-server: otel shutdown task failed: {e:?}");
+                }
+            } => {
+                println!("g-server: cleanup with otel completed");
+            }
+            _ = crate::tokio::time::sleep(grace_shutdown_timeout) => {
+                println!("g-server: drain timeout reached, forcing exit");
+                // # EXIT
+                std::process::exit(1);
             }
         }
     }
@@ -707,6 +779,134 @@ impl Logging {
 
         (self.init_fn)(self.into()).await
     }
+
+    #[cfg(feature = "otel")]
+    pub async fn init_otel(
+        &self,
+        otel_config: &Option<OTel>,
+    ) -> Result<Option<crate::opentelemetry_sdk::logs::SdkLoggerProvider>, String> {
+        use crate::opentelemetry::KeyValue;
+        use crate::opentelemetry_appender_log::OpenTelemetryLogBridge;
+        use crate::opentelemetry_otlp::{self, WithExportConfig, WithHttpConfig, WithTonicConfig};
+        use crate::opentelemetry_sdk::{
+            self, Resource,
+            logs::{BatchConfigBuilder, SdkLoggerProvider},
+        };
+
+        let Some(config) = otel_config.as_ref() else {
+            return Ok(None);
+        };
+
+        if !config.enable || !config.logging.enable {
+            return Ok(None);
+        }
+
+        println!("g-server: initializing OTel logging...");
+
+        // Build the OTLP log exporter.
+        let exporter = match config.transport {
+            OTelTransport::Http => {
+                let mut builder = opentelemetry_otlp::LogExporter::builder().with_http();
+
+                if let Some(endpoint) = config.logging.endpoint {
+                    builder = builder.with_endpoint(endpoint);
+                }
+
+                if let Some(headers) = &config.headers {
+                    builder = builder.with_headers(headers.iter().cloned().collect());
+                }
+
+                builder.with_timeout(config.export_timeout).build()
+            }
+
+            OTelTransport::Grpc => {
+                let mut builder = opentelemetry_otlp::LogExporter::builder().with_tonic();
+
+                if let Some(endpoint) = config.logging.endpoint {
+                    builder = builder.with_endpoint(endpoint);
+                }
+
+                if let Some(headers) = &config.headers {
+                    let mut metadata = tonic::metadata::MetadataMap::with_capacity(headers.len());
+
+                    for (key, value) in headers {
+                        let key = tonic::metadata::MetadataKey::from_bytes(key.as_bytes())
+                            .map_err(|err| format!("invalid OTel metadata key: {err}"))?;
+
+                        let value = tonic::metadata::MetadataValue::try_from(value.as_str())
+                            .map_err(|err| format!("invalid OTel metadata value: {err}"))?;
+
+                        metadata.insert(key, value);
+                    }
+
+                    builder = builder.with_metadata(metadata);
+                }
+
+                builder.with_timeout(config.export_timeout).build()
+            }
+        }
+        .map_err(|err| format!("failed to build OTel log exporter: {err}"))?;
+
+        // Build the OpenTelemetry resource.
+        let mut attributes = vec![KeyValue::new(
+            "service.name",
+            config.service_name.to_owned(),
+        )];
+
+        if let Some(version) = config.service_version {
+            attributes.push(KeyValue::new("service.version", version.to_owned()));
+        }
+
+        if let Some(environment) = config.environment {
+            attributes.push(KeyValue::new(
+                "deployment.environment.name",
+                environment.to_owned(),
+            ));
+        }
+
+        if let Some(custom_attributes) = &config.resource_attributes {
+            attributes.extend(
+                custom_attributes
+                    .iter()
+                    .map(|(key, value)| KeyValue::new(*key, *value)),
+            );
+        }
+
+        let resource = Resource::builder().with_attributes(attributes).build();
+
+        // Build the log processor.
+        let provider_builder = SdkLoggerProvider::builder().with_resource(resource);
+
+        let provider = if config.buffered {
+            let batch_config = BatchConfigBuilder::default()
+                .with_scheduled_delay(config.scheduled_delay)
+                .with_max_queue_size(config.max_queue_size as usize)
+                .with_max_export_batch_size(config.max_export_batch_size as usize)
+                .build();
+
+            provider_builder
+                .with_log_processor(
+                    opentelemetry_sdk::logs::BatchLogProcessor::builder(exporter)
+                        .with_batch_config(batch_config)
+                        .build(),
+                )
+                .build()
+        } else {
+            provider_builder
+                .with_log_processor(opentelemetry_sdk::logs::SimpleLogProcessor::new(exporter))
+                .build()
+        };
+
+        // Register the provider globally.
+        let bridge = OpenTelemetryLogBridge::new(&provider);
+
+        crate::log::set_boxed_logger(Box::new(bridge))
+            .map_err(|err| format!("failed to register OTel logger: {err}"))?;
+
+        crate::log::set_max_level(self.level.into());
+
+        Ok(Some(provider.clone()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1014,12 +1214,211 @@ impl Tracing {
         Ok(())
     }
 
+    #[cfg(feature = "otel")]
+    pub async fn init_otel(
+        &self,
+        otel_config: &Option<OTel>,
+    ) -> Result<Option<crate::opentelemetry_sdk::trace::SdkTracerProvider>, String> {
+        use crate::opentelemetry::{KeyValue, global, trace::TracerProvider};
+        use crate::opentelemetry_otlp::{self, WithExportConfig, WithHttpConfig, WithTonicConfig};
+        use crate::opentelemetry_sdk::{
+            Resource,
+            propagation::TraceContextPropagator,
+            trace::{
+                BatchConfigBuilder, BatchSpanProcessor, Sampler, SdkTracerProvider,
+                SimpleSpanProcessor,
+            },
+        };
+        use crate::tracing_subscriber::layer::SubscriberExt;
+
+        let Some(config) = otel_config.as_ref() else {
+            return Ok(None);
+        };
+
+        if !config.enable || !config.tracing.enable {
+            return Ok(None);
+        }
+
+        println!("g-server: initializing OTel tracing...");
+
+        // Build the OTLP span exporter.
+        let exporter = match &config.transport {
+            OTelTransport::Http => {
+                let mut builder = opentelemetry_otlp::SpanExporter::builder().with_http();
+
+                if let Some(endpoint) = config.tracing.endpoint {
+                    builder = builder.with_endpoint(endpoint);
+                }
+
+                if let Some(headers) = &config.headers {
+                    builder = builder.with_headers(headers.iter().cloned().collect());
+                }
+
+                builder.with_timeout(config.export_timeout).build()
+            }
+
+            OTelTransport::Grpc => {
+                let mut builder = opentelemetry_otlp::SpanExporter::builder().with_tonic();
+
+                if let Some(endpoint) = config.tracing.endpoint {
+                    builder = builder.with_endpoint(endpoint);
+                }
+
+                if let Some(headers) = &config.headers {
+                    let mut metadata = tonic::metadata::MetadataMap::with_capacity(headers.len());
+
+                    for (key, value) in headers {
+                        let key = tonic::metadata::MetadataKey::from_bytes(key.as_bytes())
+                            .map_err(|err| format!("invalid OTel metadata key: {err}"))?;
+
+                        let value = tonic::metadata::MetadataValue::try_from(value.as_str())
+                            .map_err(|err| format!("invalid OTel metadata value: {err}"))?;
+
+                        metadata.insert(key, value);
+                    }
+
+                    builder = builder.with_metadata(metadata);
+                }
+
+                builder.with_timeout(config.export_timeout).build()
+            }
+        }
+        .map_err(|err| format!("failed to build OTel span exporter: {err}"))?;
+
+        // Build the OpenTelemetry resource.
+        let mut attributes = vec![KeyValue::new(
+            "service.name",
+            config.service_name.to_owned(),
+        )];
+
+        if let Some(version) = config.service_version {
+            attributes.push(KeyValue::new("service.version", version.to_owned()));
+        }
+
+        if let Some(environment) = config.environment {
+            attributes.push(KeyValue::new(
+                "deployment.environment.name",
+                environment.to_owned(),
+            ));
+        }
+
+        if let Some(custom_attributes) = &config.resource_attributes {
+            attributes.extend(
+                custom_attributes
+                    .iter()
+                    .map(|(key, value)| KeyValue::new(*key, *value)),
+            );
+        }
+
+        let resource = Resource::builder().with_attributes(attributes).build();
+
+        // Configure the sampling strategy.
+        let sampler = match config.tracing.sampling_strategy {
+            OTelTracingSamplingStrategy::AlwaysOn => Sampler::AlwaysOn,
+
+            OTelTracingSamplingStrategy::AlwaysOff => Sampler::AlwaysOff,
+
+            OTelTracingSamplingStrategy::TraceIdRatio(ratio) => {
+                if !ratio.is_finite() || !(0.0..=1.0).contains(&ratio) {
+                    return Err(format!(
+                        "invalid OTel trace sampling ratio: {ratio}; expected a value between 0.0 and 1.0"
+                    ));
+                }
+
+                Sampler::TraceIdRatioBased(ratio)
+            }
+
+            OTelTracingSamplingStrategy::ParentBasedAlwaysOn => {
+                Sampler::ParentBased(Box::new(Sampler::AlwaysOn))
+            }
+
+            OTelTracingSamplingStrategy::ParentBasedAlwaysOff => {
+                Sampler::ParentBased(Box::new(Sampler::AlwaysOff))
+            }
+
+            OTelTracingSamplingStrategy::ParentBasedTraceIdRatio(ratio) => {
+                if !ratio.is_finite() || !(0.0..=1.0).contains(&ratio) {
+                    return Err(format!(
+                        "invalid OTel trace sampling ratio: {ratio}; expected a value between 0.0 and 1.0"
+                    ));
+                }
+
+                Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(ratio)))
+            }
+        };
+
+        // Build the tracer provider.
+        let provider_builder = SdkTracerProvider::builder()
+            .with_resource(resource)
+            .with_sampler(sampler);
+
+        let provider = if config.buffered {
+            let batch_config = BatchConfigBuilder::default()
+                .with_scheduled_delay(config.scheduled_delay)
+                .with_max_queue_size(config.max_queue_size as usize)
+                .with_max_export_batch_size(config.max_export_batch_size as usize)
+                .build();
+
+            provider_builder
+                .with_span_processor(
+                    BatchSpanProcessor::builder(exporter)
+                        .with_batch_config(batch_config)
+                        .build(),
+                )
+                .build()
+        } else {
+            provider_builder
+                .with_span_processor(SimpleSpanProcessor::new(exporter))
+                .build()
+        };
+
+        // Register the tracer provider globally.
+        global::set_tracer_provider(provider.clone());
+
+        // Configure distributed trace-context propagation.
+        //
+        // When enabled, extract and inject W3C Trace Context in middleware.
+        // When disabled, middleware must not extract or inject distributed
+        // trace context.
+        if config.tracing.distributed {
+            global::set_text_map_propagator(TraceContextPropagator::new());
+        }
+
+        // register into tracing layer
+        let level = match self.level {
+            LogLevel::Error => tracing::Level::ERROR,
+            LogLevel::Warn => tracing::Level::WARN,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Trace => tracing::Level::TRACE,
+        };
+
+        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(level.as_str()));
+
+        let tracer_layer = provider.tracer("g-server");
+        let otel_layer = crate::tracing_opentelemetry::layer().with_tracer(tracer_layer);
+        let subscriber = crate::tracing_subscriber::Registry::default()
+            .with(env_filter)
+            .with(otel_layer);
+
+        crate::tracing::subscriber::set_global_default(subscriber)
+            .map_err(|err| err.to_string())?;
+
+        if self.trace_log {
+            crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
+        }
+
+        Ok(Some(provider))
+    }
+
     pub async fn tracing_middleware(
-        crate::axum::extract::State((corr_id_cfg, req_id_header)): crate::axum::extract::State<(
+        crate::axum::extract::State((corr_id_cfg, req_id_header, distributed)): crate::axum::extract::State<(
             CorrelationId,
             Option<crate::http::HeaderName>,
+            bool,
         )>,
-        request: crate::axum::extract::Request,
+        mut request: crate::axum::extract::Request,
         next: crate::axum::middleware::Next,
     ) -> crate::axum::response::Response {
         use crate::tracing::Instrument;
@@ -1028,9 +1427,15 @@ impl Tracing {
         {
             corr_id_val.clone()
         } else {
-            corr_id_cfg
+            let new_corr_id_val = corr_id_cfg
                 .try_new_id()
-                .unwrap_or(crate::http::HeaderValue::from_static("<invalid>"))
+                .unwrap_or(crate::http::HeaderValue::from_static("<invalid>"));
+
+            request
+                .headers_mut()
+                .insert(&corr_id_cfg.header, new_corr_id_val.clone());
+
+            new_corr_id_val
         };
 
         let span = if let Some(req_id_header) = req_id_header {
@@ -1038,14 +1443,14 @@ impl Tracing {
                 Some(value) => crate::tracing::info_span!(
                     "request",
                     method = %request.method(),
-                    uri = %request.uri(),
+                    uri = %request.uri().path(),
                     correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
                     request_id = %value.to_str().unwrap_or("<invalid>"),
                 ),
                 None => crate::tracing::info_span!(
                     "request",
                     method = %request.method(),
-                    uri = %request.uri(),
+                    uri = %request.uri().path(),
                     correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
                 ),
             }
@@ -1053,10 +1458,25 @@ impl Tracing {
             crate::tracing::info_span!(
                 "request",
                 method = %request.method(),
-                uri = %request.uri(),
+                uri = %request.uri().path(),
                 correlation_id = %corr_id_hdr_val.to_str().unwrap_or("<invalid>"),
             )
         };
+
+        // set traceparent
+        #[cfg(feature = "otel")]
+        {
+            if distributed {
+                use crate::opentelemetry_http::HeaderExtractor;
+                use crate::tracing_opentelemetry::OpenTelemetrySpanExt;
+
+                let parent_cx = crate::opentelemetry::global::get_text_map_propagator(|p| {
+                    p.extract(&HeaderExtractor(request.headers()))
+                });
+
+                let _ = span.set_parent(parent_cx);
+            }
+        }
 
         let mut resp = next.run(request).instrument(span).await;
 
@@ -1137,8 +1557,15 @@ pub struct Metrics {
 
 impl Metrics {
     #[cfg(feature = "metrics")]
-    pub fn init(&self) -> Result<(), String> {
+    pub async fn init(&self) -> Result<(), String> {
         println!("g-server: initializing metrics...");
+
+        if let Some(init_func) = self.init_fn
+            && self.prometheus.is_none()
+        {
+            init_func().await?;
+        }
+
         self.init_system_metrics()?;
 
         Ok(())
@@ -1220,6 +1647,153 @@ impl Metrics {
         });
 
         Ok(())
+    }
+
+    #[cfg(all(feature = "metrics", feature = "otel"))]
+    pub async fn init_otel(
+        &self,
+        otel_config: &Option<OTel>,
+    ) -> Result<Option<crate::opentelemetry_sdk::metrics::SdkMeterProvider>, String> {
+        use crate::metrics_opentelemetry::{OpenTelemetryMetrics, OpenTelemetryRecorder};
+        use crate::opentelemetry::{KeyValue, metrics::MeterProvider as _};
+        use crate::opentelemetry_otlp::{
+            MetricExporter, Protocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
+            tonic_types::metadata::MetadataMap,
+        };
+        use crate::opentelemetry_sdk::{
+            Resource,
+            metrics::{
+                Aggregation, Instrument, InstrumentKind, PeriodicReader, SdkMeterProvider, Stream,
+                Temporality as SdkTemporality,
+            },
+        };
+
+        let Some(config) = otel_config.as_ref() else {
+            return Ok(None);
+        };
+
+        if !config.enable || !config.metrics.enable {
+            return Ok(None);
+        }
+
+        println!("g-server: initializing OTel metrics...");
+
+        let m = &config.metrics;
+
+        let temporality = match m.temporality {
+            Temporality::Cumulative => SdkTemporality::Cumulative,
+            Temporality::Delta => SdkTemporality::Delta,
+        };
+
+        // ---- Exporter -------------------------------------------------------
+        let exporter = match config.transport {
+            OTelTransport::Grpc => {
+                let mut b = MetricExporter::builder()
+                    .with_tonic()
+                    .with_temporality(temporality)
+                    .with_timeout(config.export_timeout);
+
+                if let Some(ep) = m.endpoint {
+                    b = b.with_endpoint(ep);
+                }
+
+                if let Some(headers) = &config.headers {
+                    let mut hm = http::HeaderMap::new();
+                    for (k, v) in headers {
+                        let name = http::HeaderName::from_bytes(k.as_bytes())
+                            .map_err(|e| format!("invalid otel header name `{k}`: {e}"))?;
+                        let val = http::HeaderValue::from_str(v)
+                            .map_err(|e| format!("invalid otel header value for `{k}`: {e}"))?;
+                        hm.insert(name, val);
+                    }
+                    b = b.with_metadata(MetadataMap::from_headers(hm));
+                }
+
+                b.build()
+            }
+            OTelTransport::Http => {
+                let mut b = MetricExporter::builder()
+                    .with_http()
+                    .with_protocol(Protocol::HttpBinary)
+                    .with_temporality(temporality)
+                    .with_timeout(config.export_timeout);
+
+                if let Some(ep) = m.endpoint {
+                    // Programmatic endpoints are used as-is for HTTP, so add the signal path.
+                    let ep = if ep.ends_with("/v1/metrics") {
+                        ep.to_string()
+                    } else {
+                        format!("{}/v1/metrics", ep.trim_end_matches('/'))
+                    };
+                    b = b.with_endpoint(ep);
+                }
+
+                if let Some(headers) = &config.headers {
+                    b = b.with_headers(headers.iter().cloned().collect());
+                }
+
+                b.build()
+            }
+        }
+        .map_err(|e| format!("failed to build OTLP metric exporter: {e}"))?;
+
+        // ---- Reader ---------------------------------------------------------
+        let reader = PeriodicReader::builder(exporter)
+            .with_interval(config.scheduled_delay)
+            .build();
+
+        // ---- Resource -------------------------------------------------------
+        let mut attrs: Vec<KeyValue> = Vec::new();
+        if let Some(v) = config.service_version {
+            attrs.push(KeyValue::new("service.version", v));
+        }
+        if let Some(env) = config.environment {
+            attrs.push(KeyValue::new("deployment.environment.name", env));
+        }
+        if let Some(extra) = &config.resource_attributes {
+            attrs.extend(extra.iter().map(|(k, v)| KeyValue::new(*k, *v)));
+        }
+
+        let resource = Resource::builder()
+            .with_service_name(config.service_name)
+            .with_attributes(attrs)
+            .build();
+
+        // ---- Provider (+ histogram bucket view) -----------------------------
+        let mut builder = SdkMeterProvider::builder()
+            .with_reader(reader)
+            .with_resource(resource);
+
+        if let Some(agg) = &m.aggregation {
+            let boundaries = agg.boundaries.clone();
+            let record_min_max = agg.record_min_max;
+            builder = builder.with_view(move |inst: &Instrument| {
+                if inst.kind() == InstrumentKind::Histogram {
+                    Stream::builder()
+                        .with_aggregation(Aggregation::ExplicitBucketHistogram {
+                            boundaries: boundaries.clone(),
+                            record_min_max,
+                        })
+                        .build()
+                        .ok()
+                } else {
+                    None
+                }
+            });
+        }
+
+        let provider = builder.build();
+
+        // ---- Bridge `metrics` -> OTel (metrics-opentelemetry) ---------------
+        let meter = provider.meter("g-server");
+        let recorder = OpenTelemetryRecorder::new(OpenTelemetryMetrics::new(meter));
+        metrics_opentelemetry::metrics::set_global_recorder(recorder)
+            .map_err(|e| format!("failed to install metrics recorder: {e}"))?;
+
+        // Optional: lets other OTel-native instrumentation share this provider.
+        opentelemetry::global::set_meter_provider(provider.clone());
+
+        Ok(Some(provider))
     }
 
     #[cfg(feature = "metrics")]
@@ -1678,6 +2252,164 @@ impl Default for Prometheus {
         Self {
             enable: true,
             endpoint: "/metrics",
+        }
+    }
+}
+
+// -------------------- OTEL --------------------
+
+#[derive(Debug, Clone)]
+pub struct OTel {
+    /// Enable otel
+    pub enable: bool,
+    /// Logging otel config
+    pub logging: OTelLogging,
+    /// Tracing otel config
+    pub tracing: OTelTracing,
+    /// Metrics otel config
+    pub metrics: OTelMetrics,
+
+    // ignored for now
+    // pub tls_collector: todo!("mTLS config for authenticated otel collector"),
+    /// Service name
+    pub service_name: &'static str,
+    /// Service version
+    pub service_version: Option<&'static str>,
+    /// Environment
+    pub environment: Option<&'static str>,
+
+    /// Headers to be sent to otel collector, if needed
+    pub headers: Option<Vec<(String, String)>>,
+    pub resource_attributes: Option<Vec<(&'static str, &'static str)>>,
+
+    /// Buffer the exports in batches
+    pub buffered: bool,
+    pub scheduled_delay: std::time::Duration,
+    pub export_timeout: std::time::Duration,
+    pub max_queue_size: u32,
+    pub max_export_batch_size: u32,
+
+    /// Transport protocol for export
+    pub transport: OTelTransport,
+
+    /// Timeout for flush operation before shutting down
+    pub flush_timeout: Duration,
+}
+
+impl Default for OTel {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            logging: OTelLogging::default(),
+            tracing: OTelTracing::default(),
+            metrics: OTelMetrics::default(),
+            service_name: "g-server",
+            service_version: None,
+            environment: None,
+            headers: None,
+            resource_attributes: None,
+            buffered: true,
+            scheduled_delay: std::time::Duration::from_millis(5000),
+            export_timeout: std::time::Duration::from_millis(5000),
+            max_queue_size: 2048,
+            max_export_batch_size: 512,
+            transport: OTelTransport::default(),
+            flush_timeout: Duration::from_millis(10_000),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum OTelTracingSamplingStrategy {
+    #[default]
+    AlwaysOn,
+    AlwaysOff,
+    TraceIdRatio(f64),
+    ParentBasedAlwaysOn,
+    ParentBasedAlwaysOff,
+    ParentBasedTraceIdRatio(f64),
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum OTelTransport {
+    Http,
+    #[default]
+    Grpc,
+}
+
+#[derive(Debug, Clone)]
+pub struct OTelLogging {
+    pub enable: bool,
+    pub endpoint: Option<&'static str>,
+}
+
+impl Default for OTelLogging {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            endpoint: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OTelTracing {
+    pub enable: bool,
+    pub endpoint: Option<&'static str>,
+    pub sampling_strategy: OTelTracingSamplingStrategy,
+    /// `true`: accept traceparent header, connecting multiple distributed traces.
+    /// `false`: traces are isolated, no inbound, no outbound.
+    pub distributed: bool,
+}
+
+impl Default for OTelTracing {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            endpoint: None,
+            sampling_strategy: OTelTracingSamplingStrategy::default(),
+            distributed: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OTelMetrics {
+    pub enable: bool,
+    pub endpoint: Option<&'static str>,
+    pub temporality: Temporality,
+    pub aggregation: Option<BucketHistogram>,
+}
+
+impl Default for OTelMetrics {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            endpoint: None,
+            temporality: Temporality::default(),
+            aggregation: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum Temporality {
+    #[default]
+    Cumulative,
+    Delta,
+}
+
+#[derive(Debug, Clone)]
+pub struct BucketHistogram {
+    pub boundaries: Vec<f64>,
+    pub record_min_max: bool,
+}
+
+impl Default for BucketHistogram {
+    fn default() -> Self {
+        Self {
+            boundaries: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5],
+            record_min_max: true,
         }
     }
 }

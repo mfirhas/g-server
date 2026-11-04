@@ -27,11 +27,14 @@ pub(crate) const CONFIG_FIELD_LOGGING: &str = "logging";
 pub(crate) const CONFIG_FIELD_TRACING: &str = "tracing";
 pub(crate) const CONFIG_FIELD_METRICS: &str = "metrics";
 
+pub(crate) const CONFIG_FIELD_OTEL: &str = "otel";
+
 /// Configs that only allowed in one of servers and applied to all servers.
 pub(crate) static GLOBAL_CONFIGS: &[&str] = &[
     CONFIG_FIELD_LOGGING,
     CONFIG_FIELD_TRACING,
     CONFIG_FIELD_METRICS,
+    CONFIG_FIELD_OTEL,
     CONFIG_FIELD_GRACEFUL_SHUTDOWN,
 ];
 
@@ -43,6 +46,7 @@ pub(crate) static ROOT_CONFIGS: &[&str] = &[
     CONFIG_FIELD_LOGGING,
     CONFIG_FIELD_TRACING,
     CONFIG_FIELD_METRICS,
+    CONFIG_FIELD_OTEL,
     CONFIG_FIELD_PANIC_ERROR,
 ];
 
@@ -118,6 +122,14 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
                 ));
             }
             parse_metrics(&name, input)?
+        } else if name.to_string() == CONFIG_FIELD_OTEL {
+            if !cfg!(feature = "otel") {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "`otel` requires feature `otel`",
+                ));
+            }
+            parse_otel(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_RATE_LIMIT {
             parse_rate_limit(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_TLS {
@@ -149,7 +161,7 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
         }
     }
 */
-fn parse_graceful_shutdown(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+fn parse_graceful_shutdown(_ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     // Declared without a body: enabled, no cleanup functions.
     if !input.peek(syn::token::Brace) {
         return Ok(syn::parse_quote!(g_server::config::GracefulShutdown {
@@ -162,6 +174,7 @@ fn parse_graceful_shutdown(ident: &Ident, input: ParseStream<'_>) -> Result<Expr
     syn::braced!(content in input);
 
     let mut enable: Option<syn::LitBool> = None;
+    let mut timeout: Option<Expr> = None;
     let mut cleanup_fns: Option<Vec<syn::Path>> = None;
 
     while !content.is_empty() {
@@ -177,6 +190,7 @@ fn parse_graceful_shutdown(ident: &Ident, input: ParseStream<'_>) -> Result<Expr
                     )
                 })?);
             }
+            "timeout" => timeout = Some(content.parse()?),
             "cleanup_fns" => {
                 let list;
                 syn::bracketed!(list in content);
@@ -203,7 +217,11 @@ fn parse_graceful_shutdown(ident: &Ident, input: ParseStream<'_>) -> Result<Expr
     }
 
     let enable = enable.map(|b| b.value).unwrap_or(true);
-
+    let timeout: Expr = timeout
+        .map(|t| syn::parse_quote!(std::time::Duration::from_millis(#t)))
+        .unwrap_or(syn::parse_quote!(
+            g_server::config::GRACEFUL_SHUTDOWN_TIMEOUT
+        ));
     // Each user fn is `async fn(Vec<Arc<dyn Any + Send + Sync>>)`, which returns an
     // `impl Future`. Wrap it in a non-capturing closure so it coerces to the
     // `fn(..) -> Pin<Box<dyn Future<Output = ()>>>` pointer the struct expects.
@@ -217,6 +235,7 @@ fn parse_graceful_shutdown(ident: &Ident, input: ParseStream<'_>) -> Result<Expr
 
     Ok(syn::parse_quote!(g_server::config::GracefulShutdown {
         enable: #enable,
+        timeout: #timeout,
         cleanup_fns: &[#(#wrapped),*],
     }))
 }
@@ -1127,7 +1146,7 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
             "prometheus" => {
                 if !cfg!(feature = "prometheus") {
                     return Err(syn::Error::new(
-                        ident.span(),
+                        field.span(),
                         "`prometheus` config requires feature `prometheus`",
                     ));
                 }
@@ -1543,6 +1562,413 @@ fn parse_prometheus(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     })
 }
 
+/*
+otel: {
+    enable: true,
+
+    service_name: "my-app",
+    service_version: "1.2.0",
+    environment: "production",
+
+    // Shared OTLP exporter settings.
+    headers: {
+        "Authorization": "Bearer my-token",
+        "X-Tenant-ID": "tenant-123",
+    },
+    timeout: 5000,
+
+    resource_attributes: {
+        "deployment.region": "ap-southeast-1",
+        "team": "platform",
+    },
+
+    // Batch span processor settings.
+    buffered: true,
+    scheduled_delay: 5000,
+    export_timeout: 5000,
+    max_queue_size: 2048,
+    max_export_batch_size: 512,
+    flush_timeout: 15000,
+
+    transport: grpc,
+
+    logging: {
+        enable: true,
+        endpoint: "http://localhost:4317",
+    },
+
+    tracing: {
+        enable: true,
+        endpoint: "http://localhost:4317",
+        sampling_strategy: parent_based_trace_id_ratio(0.5),
+    },
+
+    metrics: {
+        enable: true,
+        endpoint: "http://localhost:4317",
+        export_interval: 60000,
+        temporality: cumulative,
+
+        aggregation: {
+            boundaries: [
+                0.005,
+                0.01,
+                0.025,
+                0.05,
+                0.1,
+                0.25,
+                0.5,
+                1.0,
+                2.5,
+            ],
+            record_min_max: true,
+        },
+    },
+}
+*/
+pub(crate) fn parse_otel(_ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut assignments = Vec::<(Ident, Expr)>::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        let value = match field.to_string().as_str() {
+            "enable" | "service_name" => content.parse::<Expr>()?,
+            "headers" => parse_otel_string_pairs(&content, true)?,
+            "resource_attributes" => parse_otel_string_pairs(&content, false)?,
+
+            "service_version" | "environment" => {
+                let value: Expr = content.parse()?;
+                syn::parse_quote!(Some(#value))
+            }
+
+            "scheduled_delay" | "export_timeout" | "flush_timeout" => {
+                let millis: Expr = content.parse()?;
+                syn::parse_quote!(std::time::Duration::from_millis(#millis))
+            }
+
+            "buffered" | "max_queue_size" | "max_export_batch_size" => content.parse::<Expr>()?,
+
+            "logging" => parse_otel_logging(&content)?,
+            "tracing" => parse_otel_tracing(&content)?,
+            "metrics" => parse_otel_metrics(&content)?,
+
+            "transport" => {
+                let transport: Ident = content.parse()?;
+
+                match transport.to_string().as_str() {
+                    "http" => syn::parse_quote!(g_server::config::OTelTransport::Http),
+                    "grpc" => syn::parse_quote!(g_server::config::OTelTransport::Grpc),
+                    _ => {
+                        return Err(syn::Error::new(
+                            transport.span(),
+                            "invalid OTel transport, expected: http or grpc",
+                        ));
+                    }
+                }
+            }
+
+            _ => {
+                return Err(syn::Error::new(field.span(), "invalid OTel config field"));
+            }
+        };
+
+        assignments.push((field, value));
+        crate::consume_comma(&content)?;
+    }
+
+    let assignments = assignments.iter().map(|(field, value)| {
+        quote::quote! {
+            config.#field = #value;
+        }
+    });
+
+    Ok(syn::parse_quote! {
+        {
+            let mut config = g_server::config::OTel::default();
+            #(#assignments)*
+            config
+        }
+    })
+}
+
+fn parse_otel_logging(input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut assignments = Vec::<(Ident, Expr)>::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        let value = match field.to_string().as_str() {
+            "enable" => content.parse::<Expr>()?,
+            "endpoint" => {
+                let endpoint: Expr = content.parse()?;
+                syn::parse_quote!(Some(#endpoint))
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    "invalid OTel logging config field",
+                ));
+            }
+        };
+
+        assignments.push((field, value));
+        crate::consume_comma(&content)?;
+    }
+
+    let assignments = assignments.iter().map(|(field, value)| {
+        quote::quote! {
+            config.#field = #value;
+        }
+    });
+
+    Ok(syn::parse_quote! {
+        {
+            let mut config = g_server::config::OTelLogging::default();
+            #(#assignments)*
+            config
+        }
+    })
+}
+
+fn parse_otel_tracing(input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut assignments = Vec::<(Ident, Expr)>::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        let value = match field.to_string().as_str() {
+            "enable" => content.parse::<Expr>()?,
+            "endpoint" => {
+                let endpoint: Expr = content.parse()?;
+                syn::parse_quote!(Some(#endpoint))
+            }
+            "sampling_strategy" => parse_otel_sampling_strategy(&content)?,
+            "distributed" => content.parse::<Expr>()?,
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    "invalid OTel tracing config field",
+                ));
+            }
+        };
+
+        assignments.push((field, value));
+        crate::consume_comma(&content)?;
+    }
+
+    let assignments = assignments.iter().map(|(field, value)| {
+        quote::quote! {
+            config.#field = #value;
+        }
+    });
+
+    Ok(syn::parse_quote! {
+        {
+            let mut config = g_server::config::OTelTracing::default();
+            #(#assignments)*
+            config
+        }
+    })
+}
+
+fn parse_otel_metrics(input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut assignments = Vec::<(Ident, Expr)>::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        let value = match field.to_string().as_str() {
+            "enable" => content.parse::<Expr>()?,
+            "endpoint" => {
+                let endpoint: Expr = content.parse()?;
+                syn::parse_quote!(Some(#endpoint))
+            }
+            "temporality" => {
+                let temporality: Ident = content.parse()?;
+
+                match temporality.to_string().as_str() {
+                    "cumulative" => {
+                        syn::parse_quote!(g_server::config::Temporality::Cumulative)
+                    }
+                    "delta" => {
+                        syn::parse_quote!(g_server::config::Temporality::Delta)
+                    }
+                    _ => {
+                        return Err(syn::Error::new(
+                            temporality.span(),
+                            "invalid metrics temporality, expected: cumulative or delta",
+                        ));
+                    }
+                }
+            }
+            "aggregation" => parse_otel_metrics_aggregation(&content)?,
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    "invalid OTel metrics config field",
+                ));
+            }
+        };
+
+        assignments.push((field, value));
+        crate::consume_comma(&content)?;
+    }
+
+    let assignments = assignments.iter().map(|(field, value)| {
+        quote::quote! {
+            config.#field = #value;
+        }
+    });
+
+    Ok(syn::parse_quote! {
+        {
+            let mut config = g_server::config::OTelMetrics::default();
+            #(#assignments)*
+            config
+        }
+    })
+}
+
+fn parse_otel_sampling_strategy(input: ParseStream<'_>) -> Result<Expr> {
+    let strategy: Ident = input.parse()?;
+
+    match strategy.to_string().as_str() {
+        "always_on" => Ok(syn::parse_quote!(
+            g_server::config::OTelTracingSamplingStrategy::AlwaysOn
+        )),
+        "always_off" => Ok(syn::parse_quote!(
+            g_server::config::OTelTracingSamplingStrategy::AlwaysOff
+        )),
+        "parent_based_always_on" => Ok(syn::parse_quote!(
+            g_server::config::OTelTracingSamplingStrategy::ParentBasedAlwaysOn
+        )),
+        "parent_based_always_off" => Ok(syn::parse_quote!(
+            g_server::config::OTelTracingSamplingStrategy::ParentBasedAlwaysOff
+        )),
+        "trace_id_ratio" | "parent_based_trace_id_ratio" => {
+            let content;
+            syn::parenthesized!(content in input);
+
+            let ratio: Expr = content.parse()?;
+
+            if !content.is_empty() {
+                return Err(content.error("unexpected tokens in sampling strategy"));
+            }
+
+            match strategy.to_string().as_str() {
+                "trace_id_ratio" => Ok(syn::parse_quote!(
+                    g_server::config::OTelTracingSamplingStrategy::TraceIdRatio(#ratio)
+                )),
+                _ => Ok(syn::parse_quote!(
+                    g_server::config::OTelTracingSamplingStrategy::ParentBasedTraceIdRatio(#ratio)
+                )),
+            }
+        }
+        _ => Err(syn::Error::new(
+            strategy.span(),
+            "invalid OTel tracing sampling strategy",
+        )),
+    }
+}
+
+fn parse_otel_metrics_aggregation(input: ParseStream<'_>) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut assignments = Vec::<(Ident, Expr)>::new();
+
+    while !content.is_empty() {
+        let field: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+
+        let value = match field.to_string().as_str() {
+            "boundaries" => {
+                let array: syn::ExprArray = content.parse()?;
+                let elements = array.elems.iter();
+                syn::parse_quote!(vec![#(#elements),*])
+            }
+            "record_min_max" => content.parse::<Expr>()?,
+            _ => {
+                return Err(syn::Error::new(
+                    field.span(),
+                    "invalid bucket histogram config field",
+                ));
+            }
+        };
+
+        assignments.push((field, value));
+        crate::consume_comma(&content)?;
+    }
+
+    let assignments = assignments.iter().map(|(field, value)| {
+        quote::quote! {
+            config.#field = #value;
+        }
+    });
+
+    Ok(syn::parse_quote! {
+        {
+            let mut config = g_server::config::BucketHistogram::default();
+            #(#assignments)*
+            Some(config)
+        }
+    })
+}
+
+fn parse_otel_string_pairs(input: ParseStream<'_>, owned_values: bool) -> Result<Expr> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut keys = Vec::<Expr>::new();
+    let mut values = Vec::<Expr>::new();
+
+    while !content.is_empty() {
+        let key: Expr = content.parse()?;
+        content.parse::<Token![:]>()?;
+        let value: Expr = content.parse()?;
+
+        keys.push(key);
+        values.push(value);
+
+        crate::consume_comma(&content)?;
+    }
+
+    if owned_values {
+        Ok(syn::parse_quote! {
+            Some(vec![
+                #(
+                    (String::from(#keys), String::from(#values))
+                ),*
+            ])
+        })
+    } else {
+        Ok(syn::parse_quote! {
+            Some(vec![
+                #(
+                    (#keys, #values)
+                ),*
+            ])
+        })
+    }
+}
+
 /// validate config entries that depend on other config entries.
 // fn validate_dependent_fields(entries: &[ConfigEntry]) -> Result<()> {
 //     let pairs = [
@@ -1824,6 +2250,8 @@ impl ConfigEntry {
             CONFIG_FIELD_LOGGING => Ok(()),
             CONFIG_FIELD_TRACING => Ok(()),
             CONFIG_FIELD_METRICS => Ok(()),
+
+            CONFIG_FIELD_OTEL => Ok(()),
 
             // file configs validations
             CONFIG_FIELD_FILE_DIR | CONFIG_FIELD_FILE_FALLBACK_FILE => {

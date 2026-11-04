@@ -32,6 +32,22 @@ pub use ::metrics_exporter_prometheus;
 #[cfg(feature = "metrics")]
 pub use ::sysinfo;
 
+// OTEL
+#[cfg(feature = "otel")]
+pub use metrics_opentelemetry;
+#[cfg(feature = "otel")]
+pub use opentelemetry;
+#[cfg(feature = "otel")]
+pub use opentelemetry_appender_log;
+#[cfg(feature = "otel")]
+pub use opentelemetry_http;
+#[cfg(feature = "otel")]
+pub use opentelemetry_otlp;
+#[cfg(feature = "otel")]
+pub use opentelemetry_sdk;
+#[cfg(feature = "otel")]
+pub use tracing_opentelemetry;
+
 pub use ::env_logger;
 pub use ::log;
 pub use ::tracing;

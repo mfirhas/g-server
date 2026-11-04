@@ -33,6 +33,7 @@ embed = []
 tls = []
 metrics = []
 prometheus = []
+otel = []
 
 [dependencies]
 proc-macro2 = "1"
