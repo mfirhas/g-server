@@ -806,11 +806,7 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let content;
     syn::braced!(content in input);
 
-    let mut level: Option<Expr> = None;
-    let mut format: Option<Expr> = None;
-    let mut time_offset: Option<Expr> = None;
-    let mut init: Option<Expr> = None;
-    let mut target: Option<syn::Expr> = None;
+    let mut updates = Vec::new();
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -818,68 +814,77 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
         content.parse::<Token![:]>()?;
 
         match field.to_string().as_str() {
+            "enable" => {
+                let value: Expr = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __logging.enable = #value;
+                });
+            }
             "level" => {
                 let level_ident: Ident = content.parse()?;
-                match level_ident.to_string().as_str() {
-                    "error" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Error)),
-                    "warn" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Warn)),
-                    "info" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Info)),
-                    "debug" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Debug)),
-                    "trace" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Trace)),
+                let variant = match level_ident.to_string().as_str() {
+                    "error" => quote::quote!(Error),
+                    "warn" => quote::quote!(Warn),
+                    "info" => quote::quote!(Info),
+                    "debug" => quote::quote!(Debug),
+                    "trace" => quote::quote!(Trace),
                     _ => {
                         return Err(syn::Error::new(
-                            ident.span(),
+                            level_ident.span(),
                             "invalid tracing max level, expected: error, warn, info, debug, or trace (in order from left to right)",
                         ));
                     }
-                }
+                };
+
+                updates.push(quote::quote! {
+                    __logging.level = g_server::config::LogLevel::#variant;
+                });
             }
             "format" => {
                 let format_ident: Ident = content.parse()?;
-                match format_ident.to_string().as_str() {
-                    "default" => {
-                        format = Some(syn::parse_quote!(g_server::config::LogFormat::Default))
-                    }
-                    "pretty" => {
-                        format = Some(syn::parse_quote!(g_server::config::LogFormat::Pretty))
-                    }
-                    "json" => format = Some(syn::parse_quote!(g_server::config::LogFormat::Json)),
+                let variant = match format_ident.to_string().as_str() {
+                    "default" => quote::quote!(Default),
+                    "pretty" => quote::quote!(Pretty),
+                    "json" => quote::quote!(Json),
                     _ => {
                         return Err(syn::Error::new(
-                            ident.span(),
+                            format_ident.span(),
                             "invalid tracing format, expected: default, pretty, or json",
                         ));
                     }
-                }
+                };
+
+                updates.push(quote::quote! {
+                    __logging.format = g_server::config::LogFormat::#variant;
+                });
             }
             "time_offset" => {
                 let time_offset_ident: Ident = content.parse()?;
-                match time_offset_ident.to_string().as_str() {
-                    "utc" => {
-                        time_offset = Some(syn::parse_quote!(g_server::config::LogTimeOffset::UTC))
-                    }
-                    "local" => {
-                        time_offset =
-                            Some(syn::parse_quote!(g_server::config::LogTimeOffset::Local))
-                    }
+                let variant = match time_offset_ident.to_string().as_str() {
+                    "utc" => quote::quote!(UTC),
+                    "local" => quote::quote!(Local),
                     _ => {
                         return Err(syn::Error::new(
-                            ident.span(),
-                            "invalid tracing format, expected: default, pretty, or json",
+                            time_offset_ident.span(),
+                            "invalid time offset, expected: utc or local",
                         ));
                     }
-                }
-            }
+                };
 
+                updates.push(quote::quote! {
+                    __logging.time_offset = g_server::config::LogTimeOffset::#variant;
+                });
+            }
             "target" => {
                 let target_ident: Ident = content.parse()?;
                 match target_ident.to_string().as_str() {
-                    "stdout" => {
-                        target = Some(syn::parse_quote!(g_server::config::LogOutput::StdOut))
-                    }
-                    "stderr" => {
-                        target = Some(syn::parse_quote!(g_server::config::LogOutput::StdErr))
-                    }
+                    "stdout" => updates.push(quote::quote! {
+                        __logging.target = g_server::config::LogOutput::StdOut;
+                    }),
+                    "stderr" => updates.push(quote::quote! {
+                        __logging.target = g_server::config::LogOutput::StdErr;
+                    }),
                     "file" => {
                         let path_content;
                         syn::parenthesized!(path_content in content);
@@ -893,9 +898,11 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                             );
                         }
 
-                        target = Some(syn::parse_quote!(
-                            g_server::config::LogOutput::File(std::path::PathBuf::from(#path))
-                        ))
+                        updates.push(quote::quote! {
+                            __logging.target = g_server::config::LogOutput::File(
+                                std::path::PathBuf::from(#path)
+                            );
+                        });
                     }
                     _ => {
                         return Err(syn::Error::new(
@@ -905,42 +912,33 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     }
                 }
             }
-
             "init" => {
                 let init_path: syn::Path = content.parse()?;
-                init = Some(syn::parse_quote! {
-                    |params| std::boxed::Box::pin(#init_path(params))
-                })
-            }
 
+                updates.push(quote::quote! {
+                    __logging.init_fn = |params| std::boxed::Box::pin(#init_path(params));
+                });
+            }
             _ => {
                 return Err(syn::Error::new(
-                    ident.span(),
-                    "invalid tracing config, expected: level, format or time_offset",
+                    field.span(),
+                    format!(
+                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target or init"
+                    ),
                 ));
             }
         }
+
         crate::consume_comma(&content)?;
     }
 
-    let level = level.unwrap_or(syn::parse_quote!(g_server::config::LogLevel::default()));
-    let format = format.unwrap_or(syn::parse_quote!(g_server::config::LogFormat::default()));
-    let time_offset =
-        time_offset.unwrap_or(syn::parse_quote!(g_server::config::LogTimeOffset::default()));
-    let target = target.unwrap_or(syn::parse_quote!(g_server::config::LogOutput::default()));
-    let init_fn = init.unwrap_or(syn::parse_quote! {
-        |params| std::boxed::Box::pin(
-            g_server::config::default_logger_init(params)
-        )
-    });
-
     Ok(syn::parse_quote! {
-        g_server::config::Logging {
-            level: #level,
-            format: #format,
-            time_offset: #time_offset,
-            target: #target,
-            init_fn: #init_fn,
+        {
+            let mut __logging = g_server::config::Logging::default();
+
+            #(#updates)*
+
+            __logging
         }
     })
 }
@@ -949,12 +947,7 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let content;
     syn::braced!(content in input);
 
-    let mut level: Option<Expr> = None;
-    let mut format: Option<Expr> = None;
-    let mut time_offset: Option<Expr> = None;
-    let mut target: Option<syn::Expr> = None;
-    let mut trace_log: Option<Expr> = None;
-    let mut correlation_id: Option<Expr> = None;
+    let mut updates = Vec::new();
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -962,68 +955,77 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
         content.parse::<Token![:]>()?;
 
         match field.to_string().as_str() {
+            "enable" => {
+                let value: Expr = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __tracing.enable = #value;
+                });
+            }
             "level" => {
                 let level_ident: Ident = content.parse()?;
-                match level_ident.to_string().as_str() {
-                    "error" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Error)),
-                    "warn" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Warn)),
-                    "info" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Info)),
-                    "debug" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Debug)),
-                    "trace" => level = Some(syn::parse_quote!(g_server::config::LogLevel::Trace)),
+                let variant = match level_ident.to_string().as_str() {
+                    "error" => quote::quote!(Error),
+                    "warn" => quote::quote!(Warn),
+                    "info" => quote::quote!(Info),
+                    "debug" => quote::quote!(Debug),
+                    "trace" => quote::quote!(Trace),
                     _ => {
                         return Err(syn::Error::new(
-                            ident.span(),
+                            level_ident.span(),
                             "invalid tracing max level, expected: error, warn, info, debug, or trace (in order from left to right)",
                         ));
                     }
-                }
+                };
+
+                updates.push(quote::quote! {
+                    __tracing.level = g_server::config::LogLevel::#variant;
+                });
             }
             "format" => {
                 let format_ident: Ident = content.parse()?;
-                match format_ident.to_string().as_str() {
-                    "default" => {
-                        format = Some(syn::parse_quote!(g_server::config::LogFormat::Default))
-                    }
-                    "pretty" => {
-                        format = Some(syn::parse_quote!(g_server::config::LogFormat::Pretty))
-                    }
-                    "json" => format = Some(syn::parse_quote!(g_server::config::LogFormat::Json)),
+                let variant = match format_ident.to_string().as_str() {
+                    "default" => quote::quote!(Default),
+                    "pretty" => quote::quote!(Pretty),
+                    "json" => quote::quote!(Json),
                     _ => {
                         return Err(syn::Error::new(
-                            ident.span(),
+                            format_ident.span(),
                             "invalid tracing format, expected: default, pretty, or json",
                         ));
                     }
-                }
+                };
+
+                updates.push(quote::quote! {
+                    __tracing.format = g_server::config::LogFormat::#variant;
+                });
             }
             "time_offset" => {
                 let time_offset_ident: Ident = content.parse()?;
-                match time_offset_ident.to_string().as_str() {
-                    "utc" => {
-                        time_offset = Some(syn::parse_quote!(g_server::config::LogTimeOffset::UTC))
-                    }
-                    "local" => {
-                        time_offset =
-                            Some(syn::parse_quote!(g_server::config::LogTimeOffset::Local))
-                    }
+                let variant = match time_offset_ident.to_string().as_str() {
+                    "utc" => quote::quote!(UTC),
+                    "local" => quote::quote!(Local),
                     _ => {
                         return Err(syn::Error::new(
-                            ident.span(),
-                            "invalid tracing format, expected: default, pretty, or json",
+                            time_offset_ident.span(),
+                            "invalid time offset, expected: utc or local",
                         ));
                     }
-                }
-            }
+                };
 
+                updates.push(quote::quote! {
+                    __tracing.time_offset = g_server::config::LogTimeOffset::#variant;
+                });
+            }
             "target" => {
                 let target_ident: Ident = content.parse()?;
                 match target_ident.to_string().as_str() {
-                    "stdout" => {
-                        target = Some(syn::parse_quote!(g_server::config::LogOutput::StdOut))
-                    }
-                    "stderr" => {
-                        target = Some(syn::parse_quote!(g_server::config::LogOutput::StdErr))
-                    }
+                    "stdout" => updates.push(quote::quote! {
+                        __tracing.target = g_server::config::LogOutput::StdOut;
+                    }),
+                    "stderr" => updates.push(quote::quote! {
+                        __tracing.target = g_server::config::LogOutput::StdErr;
+                    }),
                     "file" => {
                         let path_content;
                         syn::parenthesized!(path_content in content);
@@ -1037,9 +1039,11 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                             );
                         }
 
-                        target = Some(syn::parse_quote!(
-                            g_server::config::LogOutput::File(std::path::PathBuf::from(#path))
-                        ))
+                        updates.push(quote::quote! {
+                            __tracing.target = g_server::config::LogOutput::File(
+                                std::path::PathBuf::from(#path)
+                            );
+                        });
                     }
                     _ => {
                         return Err(syn::Error::new(
@@ -1049,22 +1053,23 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     }
                 }
             }
-
             "trace_log" => {
-                let trace_log_expr: Expr = content.parse()?;
-                trace_log = Some(trace_log_expr)
-            }
+                let trace_log: Expr = content.parse()?;
 
+                updates.push(quote::quote! {
+                    __tracing.trace_log = #trace_log;
+                });
+            }
             "correlation_id" => {
                 let corr_id_ident: Ident = content.parse()?;
-                correlation_id = Some(match corr_id_ident.to_string().as_str() {
-                    "uuid_v4" => syn::parse_quote!(g_server::config::CorrelationId::default()),
-                    "uuid_v7" => syn::parse_quote!(g_server::config::CorrelationId::new_uuid_v7()),
+                let value = match corr_id_ident.to_string().as_str() {
+                    "uuid_v4" => quote::quote!(g_server::config::CorrelationId::default()),
+                    "uuid_v7" => quote::quote!(g_server::config::CorrelationId::new_uuid_v7()),
                     "custom" => {
                         let key_content;
                         syn::parenthesized!(key_content in content);
                         let func: syn::Path = key_content.parse()?;
-                        syn::parse_quote!(g_server::config::CorrelationId::new_custom(#func))
+                        quote::quote!(g_server::config::CorrelationId::new_custom(#func))
                     }
                     _ => {
                         return Err(syn::Error::new(
@@ -1072,36 +1077,32 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                             "invalid `id` type: supported `uuid_v4`, `uuid_v7`, `custom(fn() -> Result<crate::http::HeaderValue, String>)`",
                         ));
                     }
+                };
+
+                updates.push(quote::quote! {
+                    __tracing.correlation_id = #value;
                 });
             }
-
             _ => {
                 return Err(syn::Error::new(
-                    ident.span(),
-                    "invalid tracing config, expected: level, format or time_offset",
+                    field.span(),
+                    format!(
+                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target, trace_log or correlation_id"
+                    ),
                 ));
             }
         }
+
         crate::consume_comma(&content)?;
     }
 
-    let level = level.unwrap_or(syn::parse_quote!(g_server::config::LogLevel::default()));
-    let format = format.unwrap_or(syn::parse_quote!(g_server::config::LogFormat::default()));
-    let time_offset =
-        time_offset.unwrap_or(syn::parse_quote!(g_server::config::LogTimeOffset::default()));
-    let target = target.unwrap_or(syn::parse_quote!(g_server::config::LogOutput::default()));
-    let trace_log = trace_log.unwrap_or(syn::parse_quote!(false));
-    let correlation_id =
-        correlation_id.unwrap_or(syn::parse_quote!(g_server::config::CorrelationId::default()));
-
     Ok(syn::parse_quote! {
-        g_server::config::Tracing {
-            level: #level,
-            format: #format,
-            time_offset: #time_offset,
-            target: #target,
-            trace_log: #trace_log,
-            correlation_id: #correlation_id,
+        {
+            let mut __tracing = g_server::config::Tracing::default();
+
+            #(#updates)*
+
+            __tracing
         }
     })
 }
@@ -1131,9 +1132,7 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
     let content;
     syn::braced!(content in input);
 
-    let mut system: Option<Expr> = None;
-    let mut app: Option<Expr> = None;
-    let mut prometheus: Option<Expr> = None;
+    let mut updates = Vec::new();
 
     while !content.is_empty() {
         let field: Ident = content.parse()?;
@@ -1141,8 +1140,27 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
         content.parse::<Token![:]>()?;
 
         match field.to_string().as_str() {
-            "system" => system = Some(parse_system_metrics(ident, &content)?),
-            "app" => app = Some(parse_app_metrics(ident, &content)?),
+            "enable" => {
+                let value: Expr = content.parse()?;
+
+                updates.push(quote::quote! {
+                    __metrics.enable = #value;
+                });
+            }
+            "system" => {
+                let system = parse_system_metrics(ident, &content)?;
+
+                updates.push(quote::quote! {
+                    __metrics.system_metrics = #system;
+                });
+            }
+            "app" => {
+                let app = parse_app_metrics(ident, &content)?;
+
+                updates.push(quote::quote! {
+                    __metrics.app_metrics = #app;
+                });
+            }
             "prometheus" => {
                 if !cfg!(feature = "prometheus") {
                     return Err(syn::Error::new(
@@ -1150,26 +1168,31 @@ fn parse_metrics(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                         "`prometheus` config requires feature `prometheus`",
                     ));
                 }
-                prometheus = Some(parse_prometheus(ident, &content)?)
+
+                let prometheus = parse_prometheus(ident, &content)?;
+
+                updates.push(quote::quote! {
+                    __metrics.prometheus = #prometheus;
+                });
             }
             _ => {
-                return Err(syn::Error::new(ident.span(), "invalid metrics config"));
+                return Err(syn::Error::new(
+                    field.span(),
+                    format!("invalid `{ident}` config, expected: system, app or prometheus"),
+                ));
             }
         }
+
         crate::consume_comma(&content)?;
     }
 
-    let system_metrics =
-        system.unwrap_or(syn::parse_quote!(g_server::config::SystemMetrics::default()));
-    let app_metrics = app.unwrap_or(syn::parse_quote!(g_server::config::AppMetrics::default()));
-    let prometheus = prometheus.unwrap_or(syn::parse_quote!(None));
-
     Ok(syn::parse_quote! {
-        g_server::config::Metrics {
-            system_metrics: #system_metrics,
-            app_metrics: #app_metrics,
-            prometheus: #prometheus,
-            init_fn: None,
+        {
+            let mut __metrics = g_server::config::Metrics::default();
+
+            #(#updates)*
+
+            __metrics
         }
     })
 }

@@ -747,6 +747,7 @@ impl Tls {
 /// Logging configs
 #[derive(Debug, Clone)]
 pub struct Logging {
+    pub enable: bool,
     /// Max log level.
     ///
     /// All levels above this won't be logged.
@@ -768,6 +769,10 @@ pub struct Logging {
 
 impl Logging {
     pub async fn init(self, trace_config: &Option<Tracing>) -> Result<(), String> {
+        if !self.enable {
+            return Ok(());
+        }
+
         println!("g-server: initializing logging...");
 
         if trace_config.is_none() {
@@ -794,6 +799,10 @@ impl Logging {
             self, Resource,
             logs::{BatchConfigBuilder, SdkLoggerProvider},
         };
+
+        if !self.enable {
+            return Ok(None);
+        }
 
         let Some(config) = otel_config.as_ref() else {
             return Ok(None);
@@ -1023,6 +1032,7 @@ pub async fn default_logger_init(params: LoggerInitParams) -> Result<(), String>
 impl Default for Logging {
     fn default() -> Self {
         Logging {
+            enable: true,
             level: LogLevel::default(),
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
@@ -1035,6 +1045,7 @@ impl Default for Logging {
 /// Tracing configs
 #[derive(Debug, Clone)]
 pub struct Tracing {
+    pub enable: bool,
     /// Setup maximum tracing level: error -> warn -> info -> debug, -> trace,
     ///
     /// error is minimum level.
@@ -1070,6 +1081,7 @@ pub struct Tracing {
 impl Default for Tracing {
     fn default() -> Self {
         Tracing {
+            enable: true,
             level: LogLevel::default(),
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
@@ -1085,6 +1097,10 @@ impl Tracing {
         use crate::tracing;
         use crate::tracing_subscriber::{self, layer::SubscriberExt};
         use std::io::IsTerminal;
+
+        if !self.enable {
+            return Ok(());
+        }
 
         println!("g-server: initializing tracing...");
 
@@ -1253,6 +1269,10 @@ impl Tracing {
             },
         };
         use crate::tracing_subscriber::layer::SubscriberExt;
+
+        if !self.enable {
+            return Ok(None);
+        }
 
         let Some(config) = otel_config.as_ref() else {
             return Ok(None);
@@ -1584,6 +1604,8 @@ pub enum LogOutput {
 // Metrics
 #[derive(Debug, Clone)]
 pub struct Metrics {
+    pub enable: bool,
+
     pub system_metrics: SystemMetrics,
 
     pub app_metrics: AppMetrics,
@@ -1600,6 +1622,10 @@ pub struct Metrics {
 impl Metrics {
     #[cfg(feature = "metrics")]
     pub async fn init(&self) -> Result<(), String> {
+        if !self.enable {
+            return Ok(());
+        }
+
         println!("g-server: initializing metrics...");
 
         if let Some(init_func) = self.init_fn
@@ -1709,6 +1735,10 @@ impl Metrics {
                 Temporality as SdkTemporality,
             },
         };
+
+        if !self.enable {
+            return Ok(None);
+        }
 
         let Some(config) = otel_config.as_ref() else {
             return Ok(None);
@@ -1935,6 +1965,7 @@ fn record(cfg: &MetricsConfig, value: f64) {
 impl Default for Metrics {
     fn default() -> Self {
         Self {
+            enable: true,
             system_metrics: SystemMetrics::default(),
             app_metrics: AppMetrics::default(),
             prometheus: None,
