@@ -75,7 +75,7 @@ metrics-exporter-prometheus = { version = "0.17", optional = true }
 # otel
 opentelemetry = { version = "0.33", optional = true }
 opentelemetry_sdk = { version = "0.33", features = ["logs"], optional = true }
-opentelemetry-otlp = { version = "0.33", features = ["logs", "http-proto", "grpc-tonic"], optional = true }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["logs", "trace", "metrics", "http-proto", "grpc-tonic", "reqwest-client"], optional = true }
 opentelemetry-http = { version = "0.33", optional = true }
 opentelemetry-appender-log = { version = "0.33", optional = true }
 tracing-opentelemetry = { version = "0.34", optional = true }

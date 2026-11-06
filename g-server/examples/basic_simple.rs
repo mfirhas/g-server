@@ -172,6 +172,10 @@ gserver! {
             otel: {
                 enable: true
                 buffered: false
+                // logging: {
+                //     endpoint: "http://localhost:3100/otlp/v1/logs"
+                //     transport: http
+                // }
                 metrics: {
                     endpoint: "http://localhost:9090/api/v1/otlp/v1/metrics"
                     transport: http
