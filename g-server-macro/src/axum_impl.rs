@@ -426,7 +426,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                         let tracing_cfg_val = &tracing_cfg.value;
                         let otel_cfg_val = &otel_cfg.value;
                         quote! {
-                            if !(#tracing_cfg_val).trace_log && (!(#otel_cfg_val).enable || !(#otel_cfg_val).logging.enable) {
+                            if !(#tracing_cfg_val).capture_log && (!(#otel_cfg_val).enable || !(#otel_cfg_val).logging.enable) {
                                 (#logging_config).init(&Some(#tracing_cfg_val)).await.expect("g-server: failed initializing logging(with tracelog)");
                             }
                         }
@@ -434,7 +434,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                     (Some(tracing_cfg), None) => {
                         let tracing_cfg_val = &tracing_cfg.value;
                         quote! {
-                            if !(#tracing_cfg_val).trace_log {
+                            if !(#tracing_cfg_val).capture_log {
                                 (#logging_config).init(&Some(#tracing_cfg_val)).await.expect("g-server: failed initializing logging(with tracelog)");
                             }
                         }
@@ -460,7 +460,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                         let trace_log = &tracing_config.value;
 
                         quote! {
-                            if !(#trace_log).trace_log {
+                            if !(#trace_log).capture_log {
                                 (#logging_config).init(&Some(#trace_log)).await.expect("g-server: failed initializing logging(with tracelog)");
                             }
                         }
