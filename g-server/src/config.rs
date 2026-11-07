@@ -759,6 +759,9 @@ pub struct Logging {
     /// Set logs target: stdout, stderr, or directly to file
     pub target: LogOutput,
 
+    /// Capture traces from `tracing` when tracing config disabled
+    pub capture_trace: bool,
+
     /// `init()` function to initializes the logger
     pub init_fn: fn(
         LoggerInitParams,
@@ -775,7 +778,7 @@ impl Logging {
 
         println!("g-server: initializing logging...");
 
-        if trace_config.is_none() {
+        if !self.capture_trace {
             crate::tracing::subscriber::set_global_default(
                 crate::tracing::subscriber::NoSubscriber::default(),
             )
@@ -935,6 +938,13 @@ impl Logging {
 
         crate::log::set_max_level(self.level.into());
 
+        if !self.capture_trace {
+            crate::tracing::subscriber::set_global_default(
+                crate::tracing::subscriber::NoSubscriber::default(),
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         Ok(Some(provider.clone()))
     }
 }
@@ -1038,6 +1048,7 @@ impl Default for Logging {
             time_offset: LogTimeOffset::default(),
             target: LogOutput::default(),
             init_fn: |params| std::boxed::Box::pin(default_logger_init(params)),
+            capture_trace: false,
         }
     }
 }
@@ -1073,7 +1084,7 @@ pub struct Tracing {
 
     pub target: LogOutput,
 
-    pub trace_log: bool,
+    pub capture_log: bool,
 
     pub correlation_id: CorrelationId,
 }
@@ -1086,7 +1097,7 @@ impl Default for Tracing {
             format: LogFormat::default(),
             time_offset: LogTimeOffset::default(),
             target: LogOutput::default(),
-            trace_log: false,
+            capture_log: false,
             correlation_id: CorrelationId::default(),
         }
     }
@@ -1244,7 +1255,7 @@ impl Tracing {
             }
         };
 
-        if self.trace_log {
+        if self.capture_log {
             crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
         }
 
@@ -1467,7 +1478,7 @@ impl Tracing {
         crate::tracing::subscriber::set_global_default(subscriber)
             .map_err(|err| err.to_string())?;
 
-        if self.trace_log {
+        if self.capture_log {
             crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
         }
 

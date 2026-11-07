@@ -919,11 +919,17 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     __logging.init_fn = |params| std::boxed::Box::pin(#init_path(params));
                 });
             }
+            "capture_trace" => {
+                let capture_trace: Expr = content.parse()?;
+                updates.push(quote::quote! {
+                    __logging.capture_trace = #capture_trace;
+                });
+            }
             _ => {
                 return Err(syn::Error::new(
                     field.span(),
                     format!(
-                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target or init"
+                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target, init or capture_trace"
                     ),
                 ));
             }
@@ -1053,11 +1059,10 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     }
                 }
             }
-            "trace_log" => {
-                let trace_log: Expr = content.parse()?;
-
+            "capture_log" => {
+                let capture_log: Expr = content.parse()?;
                 updates.push(quote::quote! {
-                    __tracing.trace_log = #trace_log;
+                    __tracing.capture_log = #capture_log;
                 });
             }
             "correlation_id" => {
@@ -1087,7 +1092,7 @@ fn parse_tracing(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                 return Err(syn::Error::new(
                     field.span(),
                     format!(
-                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target, trace_log or correlation_id"
+                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target, capture_log or correlation_id"
                     ),
                 ));
             }
