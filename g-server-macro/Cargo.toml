@@ -31,7 +31,6 @@ all-features = true
 [features]
 embed = []
 tls = []
-metrics = []
 prometheus = []
 otel = []
 

@@ -25,12 +25,20 @@ pub use ::rustls;
 #[cfg(feature = "tls")]
 pub use ::rustls_pemfile;
 
-#[cfg(feature = "metrics")]
+// logging, tracing, metrics
 pub use ::metrics;
+pub use ::sysinfo;
+
 #[cfg(feature = "prometheus")]
 pub use ::metrics_exporter_prometheus;
-#[cfg(feature = "metrics")]
-pub use ::sysinfo;
+
+pub use ::env_logger;
+pub use ::log;
+
+pub use ::tracing;
+pub use ::tracing_log;
+pub use ::tracing_subscriber;
+// --------------------------
 
 // OTEL
 #[cfg(feature = "otel")]
@@ -47,12 +55,6 @@ pub use opentelemetry_otlp;
 pub use opentelemetry_sdk;
 #[cfg(feature = "otel")]
 pub use tracing_opentelemetry;
-
-pub use ::env_logger;
-pub use ::log;
-pub use ::tracing;
-pub use ::tracing_log;
-pub use ::tracing_subscriber;
 
 pub type StatusCode = ::http::StatusCode;
 pub type HeaderMap = ::http::HeaderMap;

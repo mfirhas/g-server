@@ -151,16 +151,19 @@ gserver! {
         app_context: Context,
         config: {
             logging: {
+                // enable: true
                 format: json,
                 target: stderr,
             }
             tracing: {
+                enable: false
                 format: pretty
                 level: info
                 target: stdout,
-                trace_log: false
+                capture_log: false
             }
             metrics: {
+                enable: false
                 system: {
                     refresh_duration: 1000,
                     network_received: {},
@@ -170,7 +173,7 @@ gserver! {
                 // prometheus: {},
             }
             otel: {
-                enable: true
+                enable: false
                 buffered: false
                 // logging: {
                 //     endpoint: "http://localhost:3100/otlp/v1/logs"

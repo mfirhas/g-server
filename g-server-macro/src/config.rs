@@ -115,12 +115,6 @@ pub(crate) fn parse_config(input: ParseStream<'_>) -> Result<Vec<ConfigEntry>> {
         } else if name.to_string() == CONFIG_FIELD_TRACING {
             parse_tracing(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_METRICS {
-            if !cfg!(feature = "metrics") {
-                return Err(syn::Error::new(
-                    name.span(),
-                    "`metrics` requires feature `metrics`",
-                ));
-            }
             parse_metrics(&name, input)?
         } else if name.to_string() == CONFIG_FIELD_OTEL {
             if !cfg!(feature = "otel") {

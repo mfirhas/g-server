@@ -192,7 +192,6 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         let tls_grace_handle_clone = tls_grace_handle.1;
         let tls_grace_handle_shutdown = tls_grace_handle.2;
 
-        #[cfg(feature = "otel")]
         let graceful_shutdown_handler = {
             let graceful_shutdown_handler = if let Some(otel_config) =
                 servers.iter().find_map(|server| {
@@ -201,16 +200,15 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                         .config
                         .iter()
                         .find(|config| config.name == crate::config::CONFIG_FIELD_OTEL)
+                        .map(|cfg| &cfg.value)
                 }) {
-                let otel_cfg_val = &otel_config.value;
-                #[cfg(feature = "metrics")]
                 {
                     quote! {
-                        #[cfg(all(feature = "otel", feature = "metrics"))]
+                        #[cfg(feature = "otel")]
                         {
                             (#grace_cfg).graceful_shutdown_with_otel(
                                 app_contexts.clone(),
-                                (#otel_cfg_val).flush_timeout,
+                                (#otel_config).flush_timeout,
                                 logging_otel_provider,
                                 tracing_otel_provider,
                                 metrics_otel_provider,
@@ -218,43 +216,8 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                         }
                     }
                 }
-
-                #[cfg(not(feature = "metrics"))]
-                {
-                    quote! {
-                        #[cfg(all(feature = "otel", not(feature = "metrics")))]
-                        {
-                            (#grace_cfg).graceful_shutdown_with_otel(
-                                app_contexts.clone(),
-                                (#otel_cfg_val).flush_timeout,
-                                logging_otel_provider,
-                                tracing_otel_provider,
-                                None,
-                            ).await;
-                        }
-                    }
-                }
             } else {
                 quote! {
-                    #[cfg(any(feature = "otel", feature = "metrics"))]
-                    {
-                        (#grace_cfg).graceful_shutdown_with_otel(
-                            app_contexts.clone(),
-                            ((#grace_cfg).timeout),
-                            None, None, None,
-                        ).await;
-                    }
-                }
-            };
-
-            graceful_shutdown_handler
-        };
-
-        #[cfg(not(feature = "otel"))]
-        let graceful_shutdown_handler = {
-            let graceful_shutdown_handler = quote! {
-                #[cfg(not(feature = "otel"))]
-                {
                     (#grace_cfg).graceful_shutdown(app_contexts.clone()).await;
                 }
             };
@@ -526,7 +489,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
     }) {
         let metrics_config = &config.value;
 
-        #[cfg(all(feature = "metrics", feature = "otel"))]
+        #[cfg(feature = "otel")]
         {
             let otel_config = servers.iter().find_map(|server| {
                 server
@@ -549,16 +512,11 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
             }
         }
 
-        #[cfg(all(feature = "metrics", not(feature = "otel")))]
+        #[cfg(not(feature = "otel"))]
         {
             quote! {
                 (#metrics_config).init().await.expect("g-server: failed initializing metrics");
             }
-        }
-
-        #[cfg(not(any(feature = "metrics", feature = "otel")))]
-        {
-            quote! {}
         }
     } else {
         quote! {}
@@ -609,42 +567,30 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
                 }
             };
             // metrics
-            #[cfg(feature = "metrics")]
-            {
-                let metrics_otel_init = if let Some(metrics_cfg) =
-                    servers.iter().find_map(|server| {
-                        server
-                            .body
-                            .config
-                            .iter()
-                            .find(|config| config.name == crate::config::CONFIG_FIELD_METRICS)
-                    }) {
-                    let metrics_cfg_val = &metrics_cfg.value;
-                    quote! {
-                        if let Some(prome) = (#metrics_cfg_val).prometheus && prome.enable && (#otel_cfg_val).enable && (#otel_cfg_val).metrics.enable {
-                            panic!("g-server: cannot have metrics otel and metrics prometheus enabled at the same time");
-                        }
-                        let metrics_otel_provider = (#metrics_cfg_val).init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing metrics otel");
-                    }
-                } else {
-                    quote! {
-                        let metrics_otel_provider = g_server::config::Metrics::default().init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing metrics otel");
-                    }
-                };
-
+            let metrics_otel_init = if let Some(metrics_cfg) = servers.iter().find_map(|server| {
+                server
+                    .body
+                    .config
+                    .iter()
+                    .find(|config| config.name == crate::config::CONFIG_FIELD_METRICS)
+            }) {
+                let metrics_cfg_val = &metrics_cfg.value;
                 quote! {
-                    #logging_otel_init
-                    #tracing_otel_init
-                    #metrics_otel_init
+                    if let Some(prome) = (#metrics_cfg_val).prometheus && prome.enable && (#otel_cfg_val).enable && (#otel_cfg_val).metrics.enable {
+                        panic!("g-server: cannot have metrics otel and metrics prometheus enabled at the same time");
+                    }
+                    let metrics_otel_provider = (#metrics_cfg_val).init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing metrics otel");
                 }
-            }
-
-            #[cfg(not(feature = "metrics"))]
-            {
+            } else {
                 quote! {
-                    #logging_otel_init
-                    #tracing_otel_init
+                    let metrics_otel_provider = g_server::config::Metrics::default().init_otel(&Some(#otel_cfg_val)).await.expect("g-server: failed initializing metrics otel");
                 }
+            };
+
+            quote! {
+                #logging_otel_init
+                #tracing_otel_init
+                #metrics_otel_init
             }
         }
 
@@ -696,15 +642,12 @@ fn generate_global_infra_middlewares() -> TokenStream2 {
             RLKey: std::fmt::Debug + Eq + PartialEq + Clone + std::hash::Hash + g_server::config::CustomKey + Send + Sync + 'static,
         {
             if let Some(ref metrics_cfg) = global_config.metrics {
-                #[cfg(feature = "metrics")]
-                {
-                    router = router.layer(
-                        g_server::axum::middleware::from_fn_with_state(
-                            metrics_cfg.app_metrics.clone(),
-                            g_server::config::Metrics::metrics_middleware,
-                        )
+                router = router.layer(
+                    g_server::axum::middleware::from_fn_with_state(
+                        metrics_cfg.app_metrics.clone(),
+                        g_server::config::Metrics::metrics_middleware,
                     )
-                }
+                )
             }
 
             if let Some(ref tracing_cfg) = global_config.tracing {
@@ -875,15 +818,12 @@ fn generate_route_infra_middlewares() -> TokenStream2 {
             RLKey: std::fmt::Debug + Eq + PartialEq + Clone + std::hash::Hash + g_server::config::CustomKey + Send + Sync + 'static,
         {
             if let Some(ref metrics_cfg) = config.metrics {
-                #[cfg(feature = "metrics")]
-                {
-                    router = router.route_layer(
-                        g_server::axum::middleware::from_fn_with_state(
-                            metrics_cfg.app_metrics.clone(),
-                            g_server::config::Metrics::metrics_middleware,
-                        )
+                router = router.route_layer(
+                    g_server::axum::middleware::from_fn_with_state(
+                        metrics_cfg.app_metrics.clone(),
+                        g_server::config::Metrics::metrics_middleware,
                     )
-                }
+                )
             }
 
             if let Some(ref tracing_cfg) = config.tracing {
@@ -1142,7 +1082,7 @@ fn generate_init_function(server: &crate::server::Server) -> Result<TokenStream2
     {
         let metrics_config = &config.value;
         quote! {
-            #[cfg(all(feature = "metrics", feature = "prometheus"))]
+            #[cfg(feature = "prometheus")]
             {
                 router = if let Some(prometheus_config) = &(#metrics_config).prometheus && prometheus_config.enable {
                     println!("g-server: initializing prometheus exporter...");

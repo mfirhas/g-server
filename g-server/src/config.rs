@@ -1631,7 +1631,6 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    #[cfg(feature = "metrics")]
     pub async fn init(&self) -> Result<(), String> {
         if !self.enable {
             return Ok(());
@@ -1650,7 +1649,6 @@ impl Metrics {
         Ok(())
     }
 
-    #[cfg(feature = "metrics")]
     pub fn init_system_metrics(&self) -> Result<(), String> {
         use crate::sysinfo::{Disks, Networks, System};
 
@@ -1728,7 +1726,7 @@ impl Metrics {
         Ok(())
     }
 
-    #[cfg(all(feature = "metrics", feature = "otel"))]
+    #[cfg(feature = "otel")]
     pub async fn init_otel(
         &self,
         otel_config: &Option<OTel>,
@@ -1891,7 +1889,6 @@ impl Metrics {
         Ok(Some(provider))
     }
 
-    #[cfg(feature = "metrics")]
     pub async fn metrics_middleware(
         crate::axum::extract::State(app_metrics): crate::axum::extract::State<AppMetrics>,
         request: crate::axum::extract::Request,
@@ -1954,7 +1951,6 @@ impl Metrics {
     }
 }
 
-#[cfg(feature = "metrics")]
 fn record(cfg: &MetricsConfig, value: f64) {
     if !cfg.enable {
         return;

@@ -28,7 +28,6 @@ all-features = true
 [features]
 embed = ["dep:rust-embed", "dep:mime_guess", "g-server-macro/embed"]
 tls = ["dep:axum-server", "dep:rustls", "dep:rustls-pemfile", "g-server-macro/tls"]
-metrics = ["dep:metrics", "dep:sysinfo", "g-server-macro/metrics"]
 prometheus = ["dep:metrics-exporter-prometheus", "g-server-macro/prometheus"]
 otel = [
   "dep:opentelemetry",
@@ -57,19 +56,21 @@ uuid = { version = "1.27", features = ["fast-rng", "v4", "v7"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tower_governor = "0.8"
 tonic = { version = "0.14", default-features = false }
+
+# otel
 log = { version = "0.4", features = ["kv"] }
 env_logger = "0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono", "json"] }
 tracing-log = "0.2"
+metrics = "0.24"
+sysinfo = "0.39"
 
 rust-embed = { version = "8", optional = true }
 mime_guess = { version = "2", optional = true }
 axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
 rustls = { version = "0.23", optional = true }
 rustls-pemfile = { version = "2", optional = true }
-metrics = { version = "0.24", optional = true }
-sysinfo = { version = "0.39", optional = true }
 metrics-exporter-prometheus = { version = "0.17", optional = true }
 
 # otel
