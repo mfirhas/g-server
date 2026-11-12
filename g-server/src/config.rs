@@ -771,7 +771,7 @@ pub struct Logging {
 }
 
 impl Logging {
-    pub async fn init(self, trace_config: &Option<Tracing>) -> Result<(), String> {
+    pub async fn init(&self) -> Result<(), String> {
         if !self.enable {
             return Ok(());
         }
@@ -963,14 +963,14 @@ pub struct LoggerInitParams {
     pub target: LogOutput,
 }
 
-impl From<Logging> for LoggerInitParams {
+impl From<&Logging> for LoggerInitParams {
     #[inline]
-    fn from(value: Logging) -> Self {
+    fn from(value: &Logging) -> Self {
         LoggerInitParams {
             level: value.level,
             format: value.format,
             time_offset: value.time_offset,
-            target: value.target,
+            target: value.target.clone(),
         }
     }
 }
@@ -1104,7 +1104,7 @@ impl Default for Tracing {
 }
 
 impl Tracing {
-    pub fn init(&self) -> Result<(), String> {
+    pub async fn init(&self) -> Result<(), String> {
         use crate::tracing;
         use crate::tracing_subscriber::{self, layer::SubscriberExt};
         use std::io::IsTerminal;
