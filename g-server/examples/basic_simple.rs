@@ -20,8 +20,8 @@ impl Context {
 #[tracing::instrument]
 async fn ping(_: Context, req: Request) -> Result<Response<String>, Response<String>> {
     println!("===>");
-    log::info!("nganu");
-    tracing::info!(anu = 123, "PING");
+    log::info!("this is log");
+    tracing::info!(anu = 123, "this is tracing");
     Ok(Response::new().with_text("pong".into()))
 }
 
@@ -151,16 +151,17 @@ gserver! {
         app_context: Context,
         config: {
             logging: {
-                // enable: true
+                enable: true
+                capture_trace: true,
                 format: json,
                 target: stderr,
             }
             tracing: {
-                enable: false
+                enable: true
+                capture_log: false
                 format: pretty
                 level: info
                 target: stdout,
-                capture_log: false
             }
             metrics: {
                 enable: false
