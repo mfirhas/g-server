@@ -938,13 +938,6 @@ impl Logging {
 
         crate::log::set_max_level(self.level.into());
 
-        if !self.capture_trace {
-            crate::tracing::subscriber::set_global_default(
-                crate::tracing::subscriber::NoSubscriber::default(),
-            )
-            .map_err(|e| e.to_string())?;
-        }
-
         Ok(Some(provider.clone()))
     }
 }
@@ -1477,10 +1470,6 @@ impl Tracing {
 
         crate::tracing::subscriber::set_global_default(subscriber)
             .map_err(|err| err.to_string())?;
-
-        if self.capture_log {
-            crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
-        }
 
         Ok(Some(provider))
     }
