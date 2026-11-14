@@ -158,7 +158,7 @@ gserver! {
             }
             tracing: {
                 enable: true
-                capture_log: false
+                capture_log: true
                 format: pretty
                 level: info
                 target: stdout,

@@ -474,13 +474,13 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
 
     let logging_init = quote! {
         if is_init_logging {
-            logging_config.init().await.expect("g-server: failed initializing logging...");
+            logging_config.init(is_init_tracing).await.expect("g-server: failed initializing logging...");
         }
     };
 
     let tracing_init = quote! {
         if is_init_tracing {
-            tracing_config.init().await.expect("g-server: failed initializing tracing...");
+            tracing_config.init(is_init_logging).await.expect("g-server: failed initializing tracing...");
         }
     };
 

@@ -771,14 +771,14 @@ pub struct Logging {
 }
 
 impl Logging {
-    pub async fn init(&self) -> Result<(), String> {
+    pub async fn init(&self, is_tracing_enable: bool) -> Result<(), String> {
         if !self.enable {
             return Ok(());
         }
 
         println!("g-server: initializing logging...");
 
-        if !self.capture_trace {
+        if !self.capture_trace && !is_tracing_enable {
             crate::tracing::subscriber::set_global_default(
                 crate::tracing::subscriber::NoSubscriber::default(),
             )
@@ -1104,7 +1104,7 @@ impl Default for Tracing {
 }
 
 impl Tracing {
-    pub async fn init(&self) -> Result<(), String> {
+    pub async fn init(&self, is_logging_enable: bool) -> Result<(), String> {
         use crate::tracing;
         use crate::tracing_subscriber::{self, layer::SubscriberExt};
         use std::io::IsTerminal;
@@ -1255,7 +1255,7 @@ impl Tracing {
             }
         };
 
-        if self.capture_log {
+        if self.capture_log && !is_logging_enable {
             crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
         }
 
