@@ -164,14 +164,14 @@ gserver! {
                 target: stdout,
             }
             metrics: {
-                enable: false
+                enable: true
                 system: {
                     refresh_duration: 1000,
                     network_received: {},
                     network_sent: {},
                 },
                 app: {enable:true},
-                // prometheus: {},
+                prometheus: {},
             }
             otel: {
                 enable: false

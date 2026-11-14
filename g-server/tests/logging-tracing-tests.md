@@ -21,13 +21,6 @@
 
 ## Testing Metrics
 - Collector: prometheus
-- Protocol: http (prometheus only support pull and otel via http)
-
-| Prometheus | OTel | Result | Desc. |
-| ---------- | ---- | ------ | ----- |
-| off        | off  |   ✅   |  Server starts normally. | 
-| ON         | off  |   ✅   |  Server starts normally, prometheus pull metrics from app endpoint, and showed in prometheus dashboard. | 
-| off        | ON   |        |       |
-| off        | ON   |        |       |
-| ON         | ON   |        |       |
-| ON         | ON   |        |       |
+- pull-based with metrics endpoint
+- status: ✅
+- desc: endpoint served, metrics captured in dashboard
