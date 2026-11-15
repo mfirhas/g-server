@@ -815,10 +815,8 @@ impl Logging {
             return Ok(None);
         }
 
-        if !config.buffered && config.logging.endpoint.is_none() {
-            println!(
-                "g-server: buffered is false and otel logging endpoint is none, ignoring logging otel initialization..."
-            );
+        if config.logging.endpoint.is_none() {
+            println!("g-server: otel logging endpoint is not set, no initialization...");
             return Ok(None);
         }
 
@@ -1286,10 +1284,8 @@ impl Tracing {
             return Ok(None);
         }
 
-        if !config.buffered && config.tracing.endpoint.is_none() {
-            println!(
-                "g-server: buffered is false and otel tracing endpoint is none, ignoring tracing otel initialization..."
-            );
+        if config.tracing.endpoint.is_none() {
+            println!("g-server: otel tracing endpoint is not set, no initialization...");
             return Ok(None);
         }
 
@@ -1746,10 +1742,8 @@ impl Metrics {
             return Ok(None);
         }
 
-        if !config.buffered && config.metrics.endpoint.is_none() {
-            println!(
-                "g-server: buffered is false and otel metrics endpoint is none, ignoring metrics otel initialization..."
-            );
+        if config.metrics.endpoint.is_none() {
+            println!("g-server: otel metrics endpoint is not set, no initialization...");
             return Ok(None);
         }
 
