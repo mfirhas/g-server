@@ -171,16 +171,21 @@ gserver! {
                     network_sent: {},
                 },
                 app: {enable:true},
-                prometheus: {},
+                // prometheus: {},
             }
             otel: {
-                enable: false
+                enable: true
                 buffered: false
-                // logging: {
-                //     endpoint: "http://localhost:3100/otlp/v1/logs"
-                //     transport: http
-                // }
+                logging: {
+                    enable: true
+                    endpoint: "http://localhost:3100/otlp/v1/logs"
+                    transport: http
+                }
+                tracing: {
+                    enable: false
+                }
                 metrics: {
+                    enable: true
                     endpoint: "http://localhost:9090/api/v1/otlp/v1/metrics"
                     transport: http
                 }
