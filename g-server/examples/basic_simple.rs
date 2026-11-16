@@ -163,7 +163,7 @@ gserver! {
                 target: stdout,
             }
             metrics: {
-                enable: true
+                enable: false
                 system: {
                     refresh_duration: 1000,
                     network_received: {},
@@ -173,7 +173,7 @@ gserver! {
                 // prometheus: {},
             }
             otel: {
-                enable: true
+                enable: false
                 buffered: false
                 logging: {
                     enable: true
