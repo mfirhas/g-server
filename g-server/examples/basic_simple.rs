@@ -152,7 +152,6 @@ gserver! {
         config: {
             logging: {
                 enable: true
-                capture_trace: true,
                 format: json,
                 target: stderr,
             }

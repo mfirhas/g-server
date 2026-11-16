@@ -759,9 +759,6 @@ pub struct Logging {
     /// Set logs target: stdout, stderr, or directly to file
     pub target: LogOutput,
 
-    /// Capture traces from `tracing` when tracing config disabled
-    pub capture_trace: bool,
-
     /// `init()` function to initializes the logger
     pub init_fn: fn(
         LoggerInitParams,
@@ -782,7 +779,7 @@ impl Logging {
 
         println!("g-server: initializing logging...");
 
-        if !self.capture_trace && !is_tracing_enable && !is_otel_tracing_enable {
+        if !is_tracing_enable && !is_otel_tracing_enable {
             crate::tracing::subscriber::set_global_default(
                 crate::tracing::subscriber::NoSubscriber::default(),
             )
@@ -1043,7 +1040,6 @@ impl Default for Logging {
             time_offset: LogTimeOffset::default(),
             target: LogOutput::default(),
             init_fn: |params| std::boxed::Box::pin(default_logger_init(params)),
-            capture_trace: false,
         }
     }
 }

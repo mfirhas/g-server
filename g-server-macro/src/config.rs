@@ -913,17 +913,11 @@ fn parse_logging(ident: &Ident, input: ParseStream<'_>) -> Result<Expr> {
                     __logging.init_fn = |params| std::boxed::Box::pin(#init_path(params));
                 });
             }
-            "capture_trace" => {
-                let capture_trace: Expr = content.parse()?;
-                updates.push(quote::quote! {
-                    __logging.capture_trace = #capture_trace;
-                });
-            }
             _ => {
                 return Err(syn::Error::new(
                     field.span(),
                     format!(
-                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target, init or capture_trace"
+                        "invalid `{ident}` config, expected: enable, level, format, time_offset, target, or init"
                     ),
                 ));
             }
