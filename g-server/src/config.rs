@@ -1261,6 +1261,7 @@ impl Tracing {
     pub async fn init_otel(
         &self,
         otel_config: &Option<OTel>,
+        is_logging_enable: bool, // if any otel or non-otel logging enabled
     ) -> Result<Option<crate::opentelemetry_sdk::trace::SdkTracerProvider>, String> {
         use crate::opentelemetry::{KeyValue, global, trace::TracerProvider};
         use crate::opentelemetry_otlp::{
@@ -1470,6 +1471,10 @@ impl Tracing {
 
         crate::tracing::subscriber::set_global_default(subscriber)
             .map_err(|err| err.to_string())?;
+
+        if self.capture_log && !is_logging_enable {
+            crate::tracing_log::LogTracer::init().map_err(|err| err.to_string())?
+        }
 
         Ok(Some(provider))
     }

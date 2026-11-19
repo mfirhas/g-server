@@ -499,7 +499,7 @@ fn generate_main(servers: &[&crate::server::Server]) -> TokenStream2 {
         };
         #[cfg(feature = "otel")]
         let tracing_otel_provider = if is_init_otel_tracing {
-            tracing_config.init_otel(&otel_config).await.expect("g-server: failed initializing tracing otel...")
+            tracing_config.init_otel(&otel_config, (is_init_logging || is_init_otel_logging)).await.expect("g-server: failed initializing tracing otel...")
         } else {
             None
         };
