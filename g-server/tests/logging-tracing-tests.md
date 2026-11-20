@@ -31,6 +31,11 @@
 [^1]: https://docs.rs/opentelemetry_sdk/latest/opentelemetry_sdk/logs/struct.SimpleLogProcessor.html
 
 ## Testing OTel Tracing
+- Collector: tempo
+- Method: push-based with otel
+- Dependency: reqwest-blocking-client
+
+
 
 ## Testing OTel Metrics
 - Collector: prometheus
